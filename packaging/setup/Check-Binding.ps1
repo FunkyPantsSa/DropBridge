@@ -10,7 +10,7 @@ param([switch]$Quiet)
 $ErrorActionPreference = 'Continue'
 $c811All = @(Get-PnpDevice -PresentOnly -ErrorAction SilentlyContinue |
     Where-Object { $_.InstanceId -like 'USB\VID_0BDA&PID_C811*' })
-$c811 = @($c811All | Where-Object { $_.InstanceId -notmatch '&MI_' }) | Select-Object -First 1
+$c811 = @($c811All | Where-Object { $_.InstanceId -match '&MI_' }) | Select-Object -First 1
 if (-not $c811) { $c811 = $c811All | Select-Object -First 1 }
 $c820 = @(Get-PnpDevice -PresentOnly -ErrorAction SilentlyContinue |
     Where-Object { $_.InstanceId -like 'USB\VID_0BDA&PID_C820&MI_02\*' }) | Select-Object -First 1

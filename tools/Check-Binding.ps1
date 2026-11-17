@@ -19,7 +19,7 @@ $c811All = @(Get-PnpDevice -PresentOnly |
     Where-Object { $_.InstanceId -like 'USB\VID_0BDA&PID_C811*' })
 # On a single-function 8811CU the node has no &MI_. If a board ever exposes a
 # composite device, prefer a function node over the composite parent.
-$c811 = @($c811All | Where-Object { $_.InstanceId -notmatch '&MI_' }) | Select-Object -First 1
+$c811 = @($c811All | Where-Object { $_.InstanceId -match '&MI_' }) | Select-Object -First 1
 if (-not $c811) { $c811 = $c811All | Select-Object -First 1 }
 
 $c820 = @(Get-PnpDevice -PresentOnly |
