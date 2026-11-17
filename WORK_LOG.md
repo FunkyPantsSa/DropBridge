@@ -11,6 +11,7 @@
 - 观察：用户自己跑的 ch6（2.4 GHz）也能 bring-up（is_btg=1、IQK 0/0），但日志有 `apply_tx_power path 0 ch6 EFUSE base unprogrammed — leaving TXAGC default`，即 2.4G 用默认 TX 功率表；AWDL social 信道含 ch6，空口时要实测确认。
 - 未验证：TX 空口注入、AWDL、iPhone 发现/AirDrop、真实文件传输；netd/awdld/bridge 仍未编译。
 - 证据：`evidence/q71-ci-radio-c811-2026-11-17.log`；Q71 状态与 STATUS 已同步。
+- 后续已登记为 **Q72**（8811CU 空口 TX 见证 + AWDL/AirDrop 整链、真实文件）与 **Q73**（CI 扩展编译 netd/awdld），前置条件、步骤与判据见 docs/WORK_QUEUE.md；两项都要用户逐项授权发射/安排时间后才能做。
 
 ## 2026-11-17 晚：GitHub Actions 编 radio（两次失败 → 修生成器、修 pkgconf 语法）
 
