@@ -7,7 +7,7 @@
 ```text
 iPhone
   ↕ AWDL
-radio.exe（RTL8821CU）
+radio.exe（RTL8811CU / RTL8821CU）
   ↕ radio_link TCP / 命名管道桥
 awdld / OWL（AWDL 控制面，GPL-3.0）
   ↕ 原始 IPv6 包（本地 TCP 49877，不进 Windows IP 栈）

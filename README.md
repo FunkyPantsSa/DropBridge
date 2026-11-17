@@ -12,7 +12,7 @@
 iPhone 不用装 App · 不依赖 WSL2 或虚拟机 · 不影响电脑原有 Wi-Fi
 
 [![平台](https://img.shields.io/badge/平台-Windows%2010%20%2F%2011%20x64-0078D4)](#使用)
-[![网卡](https://img.shields.io/badge/网卡-RTL8821CU-555)](#使用)
+[![网卡](https://img.shields.io/badge/网卡-RTL8811CU%20%2F%20RTL8821CU-555)](#使用)
 [![状态](https://img.shields.io/badge/状态-内部测试-orange)](#状态与限制)
 [![许可证](https://img.shields.io/badge/许可证-MIT-green)](LICENSE)
 
@@ -22,7 +22,7 @@ iPhone 不用装 App · 不依赖 WSL2 或虚拟机 · 不影响电脑原有 Wi-
 
 ---
 
-DropBridge 是一个常驻托盘的程序。它通过 WinUSB 直接驱动一张专用的 **RTL8821CU USB 无线网卡**，在用户态跑 AWDL（隔空投送底层的无线协议），让 iPhone 把电脑当成普通的隔空投送设备。
+DropBridge 是一个常驻托盘的程序。它通过 WinUSB 直接驱动一张专用的 **RTL8811CU USB 无线网卡**（兼容 RTL8821CU），在用户态跑 AWDL（隔空投送底层的无线协议），让 iPhone 把电脑当成普通的隔空投送设备。
 
 ## 使用
 
@@ -31,15 +31,15 @@ DropBridge 是一个常驻托盘的程序。它通过 WinUSB 直接驱动一张�
 | | |
 | --- | --- |
 | 系统 | Windows 10 / 11 x64，系统自带 .NET Framework 4.8 即可 |
-| 网卡 | RTL8821CU，USB ID `0bda:c820`（只验证过这个 ID），建议直插不经 Hub |
+| 网卡 | RTL8811CU（USB ID `0bda:c811`，推荐）或 RTL8821CU（`0bda:c820`，兼容），建议直插不经 Hub |
 | 权限 | 首次运行需要一次管理员权限，用于安装 WinUSB 驱动 |
-| 蓝牙 | 建议有。用于发 beacon 帮 iPhone 发现电脑，没有也能收但更慢 |
+| 蓝牙 | 需要电脑自带或另插一个支持 BLE 广播的蓝牙适配器。8811CU 本身没有蓝牙；beacon 用它帮 iPhone 发现电脑，没有也能收但更慢 |
 
 ### 安装
 
 1. 把 `DropBridge-portable.zip` 解压到可写目录（如 `D:\DropBridge`，不要放 Program Files）。
 2. 插上网卡，双击 `DropBridge.exe`，程序只在通知区域放一个托盘图标。
-3. 首次运行会询问并通过 UAC 把网卡的 **MI_02（Wi-Fi）接口**换成 WinUSB（MI_00/MI_01 不动），日志在 `data\logs\driver-install.txt`。失败时可用托盘「安装驱动（首次使用）」重试，或按 `setup\README.txt`（仓库中 [packaging/setup/README.txt](packaging/setup/README.txt)）用 Zadig 手动绑定。
+3. 首次运行会询问并通过 UAC 把网卡的 **Wi-Fi 接口**换成 WinUSB（8811CU 通常是整台设备；8821CU 是 MI_02，MI_00/MI_01 不动），日志在 `data\logs\driver-install.txt`。失败时可用托盘「安装驱动（首次使用）」重试，或按 `setup\README.txt`（仓库中 [packaging/setup/README.txt](packaging/setup/README.txt)）用 Zadig 手动绑定。
 4. 等待 40–90 秒网卡初始化，托盘提示就绪。首次成功启动会自动开启「开机自启」。
 
 ### 接收文件
@@ -121,7 +121,7 @@ DropBridge\
 ### 工作原理
 
 ```text
-iPhone ──AWDL──▶ RTL8821CU（MI_02 = WinUSB）
+iPhone ──AWDL──▶ RTL8811CU / RTL8821CU（Wi-Fi 接口 = WinUSB）
   └▶ airbridge_radio.exe    devourer 用户态驱动（libusb），TCP 49876
   └▶ radio_pipe_bridge.exe  命名管道 ↔ TCP
   └▶ awdld.exe              OWL 的 AWDL 控制面（打补丁，走 IPC 后端）
@@ -187,11 +187,12 @@ dist\DropBridge\DropBridge.exe --check     # 应 exit 0
 | [docs/RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md) | 发布前核对清单 |
 | [docs/FINAL_PLAN.md](docs/FINAL_PLAN.md) · [PLAN.md](docs/PLAN.md) · [PHASE0_AUDIT.md](docs/PHASE0_AUDIT.md) | 方案、计划与审计 |
 | [docs/LICENSE_MATRIX.md](docs/LICENSE_MATRIX.md) | 许可证核查 |
+| [docs/CHIP_SWITCH_8811CU.md](docs/CHIP_SWITCH_8811CU.md) | 改用 RTL8811CU 的可行性、改动清单与测试顺序 |
 | [docs/SEND_PATH.md](docs/SEND_PATH.md) | 发送方向排查（结论：无法实现） |
 
 ## 状态与限制
 
-源码实现、本机编译、本机硬件、真实文件传输四层分开记录。当前 HEAD 含 Q68–Q70 修复，**尚未测试**，与最后一次测过的包（Q50 起）不同。
+源码实现、本机编译、本机硬件、真实文件传输四层分开记录。当前 HEAD 含 Q68–Q70 修复与 Q71 的 c811/c820 双识别源码，**这些改动都尚未在 Windows 编译、也没有 8811CU 真机证据**；下表实测全部来自 RTL8821CU（`0bda:c820`）。
 
 | 实测（真实文件字节 / 墙钟时间） | 结果 | 出处 |
 | --- | --- | --- |

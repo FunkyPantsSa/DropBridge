@@ -119,7 +119,7 @@ foreach ($license in @(
 @'
 @echo off
 rem Starts the DropBridge backend chain without Flutter.
-rem This initialises the RTL8821CU and makes awdld transmit AWDL frames:
+rem This initialises the RTL8811CU / RTL8821CU and makes awdld transmit AWDL frames:
 rem run it only when you intend to test with the phone.
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0tools\Start-Chain.ps1" -Run %*
 pause
@@ -129,8 +129,9 @@ pause
 DropBridge headless package
 
 1. Extract this folder anywhere writable.
-2. Bind the RTL8821CU MI_02 interface to WinUSB once if this PC never used it
-   (Zadig; the only step that needs Administrator). See docs\BINDING_RUNBOOK.md.
+2. Bind the Wi-Fi interface to WinUSB once if this PC never used it (Zadig;
+   the only step that needs Administrator): the whole device for RTL8811CU,
+   MI_02 for RTL8821CU. See docs\BINDING_RUNBOOK.md.
 3. Double-click Start.cmd. It starts radio (149 / 20 MHz), bridge, awdl_netd,
    awdld and the Python receiver, all without Flutter or a Dart runtime.
 4. On iPhone open AirDrop, choose "Everyone for 10 Minutes", send a file.

@@ -54,9 +54,10 @@ RTL8821CU 换成 RTL8811CU、蓝牙单独实现”，并列出要改的点、验
   （当前是 Intel AX211）；没有蓝牙时 beacon 只能退避重试，接收仍可用，只是
   发现更慢。
 
-## 4. 必须改的点
+## 4. 改动点（2026-11-17 已改源码）
 
-功能性的（不改就会指错设备 / 装不上驱动）：
+功能性的（不改就会指错设备 / 装不上驱动）。**源码/脚本/文档已经在 2026-11-17
+提交；只有 INF/.cat 留到 Windows 重签。表中行号是改动前的位置，保留作对照。**
 
 | 位置 | 现状 | 8811CU 下要改成 |
 | --- | --- | --- |
@@ -99,33 +100,33 @@ INF、托盘检测和两个 `Check-Binding.ps1` 的 `MI_02` 假设都要改。
   `dropbridge-driver.cer` 并重签 `.cat`；运行时安装器导入的是**随包的 .cer**，
   所以新证书同样可用。代价只是旧机器上会多一张旧根证书。
 - Mac 上不能产出 `.cat`（没有 `makecat`/`signtool`），所以 **不要在 Mac 上改
-  INF**：保持 INF/.cat 成对一致，把这一步整体留到 Windows。
+  INF**：保持 INF/.cat 成对一致，把这一步整体留到 Windows，用
+  `tools/Enable-8811CU-Driver.ps1` 一次完成（见第 6 节第 3 步）。
 
 ## 6. 不等待签名的测试路径
 
 测试 8811CU 不需要先过签名这一关：Zadig/libwdi 会自己生成并安装驱动包，
-完全不使用仓库里的 `airbridge-winusb.inf/.cat`。而且**连代码都不用先改**：
-`airbridge_radio` 已支持 `AIRBRIDGE_PID` / `AIRBRIDGE_VID` 环境变量
-（`src/radio_usb/main.cpp:288-289`），用现有构建把 PID 指到 `0xc811` 就能打开
-8811CU。建议这样走：
+完全不使用仓库里的 `airbridge-winusb.inf/.cat`。源码的 c811 识别已经改好
+（Q71）：未设 `AIRBRIDGE_PID` 时 radio 会先试 c811、再试 c820；托盘和
+`Check-Binding` 也同时识别两种设备。正常路径因此是：
 
-0. **零代码冒烟（不签名、不改代码）**：Windows 上编译现有源码 → Zadig 把
-   `0bda:c811` 绑到 WinUSB → `build\usb_probe\Release\usb_probe.exe 0bda c811
-   --read8 00FC` 确认 chip-id `0x09` → `set AIRBRIDGE_PID=0xc811` →
-   `build\radio_usb\Release\airbridge_radio.exe 149 20`。托盘仍按 c820 检测，
-   会弹一次“没找到网卡”，但不挡后端启动；先单独跑 radio 可避开它。
-1. **Mac：只改不用签名的部分。** 放开 c811 的设备识别、托盘/脚本匹配、文档；
-   INF/.cat 不动，仓库始终是可打包状态。提交后用 `git format-patch`（或 bundle）
-   同步到 Windows。
-2. **Windows：用改后的代码跑完整链路（仍不需要签名）。** 编译 radio/托盘；
-   用 Zadig 绑 c811；跑初始化、149/20 RX、TX 空口见证、AWDL/iPhone、真实文件。
-   这一步就能回答“8811CU 在这台机器上到底行不行”。
-3. **Windows：最后再做自动安装。** 改 INF 增加 c811，重跑
-   `Build-DriverPackage.ps1`，用 `pnputil /add-driver ... /install` 验证，再在
-   干净机器上确认首次运行能自动绑定；INF/.cat/.cer 三个文件一起提交。
+0. **可选：旧构建零代码冒烟。** 如果手上只有改动前的 radio，可以设
+   `AIRBRIDGE_PID=0xc811`（`AIRBRIDGE_VID` 仍可覆盖 VID）→
+   `build\usb_probe\Release\usb_probe.exe 0bda c811 --read8 00FC` 确认
+   chip-id `0x09` → `airbridge_radio.exe 149 20`。新构建不需要这个变量。
+1. **Windows：编译改后的代码 + Zadig 绑定。** 不需要签名；Zadig 把
+   `0bda:c811` 绑到 WinUSB，`tools\Check-Binding.ps1` 应显示
+   `RTL8811CU Wi-Fi (whole device)` 且 service 为 `WinUSB`。
+2. **Windows：跑完整链路（仍不需要签名）。** 初始化/固件 → 149/20 RX →
+   TX 空口见证 → AWDL/iPhone → 真实文件。这一步回答“8811CU 在这台机器上
+   到底行不行”；失败就没必要做第 3 步。
+3. **Windows：最后再做自动安装。** 运行 `tools\Enable-8811CU-Driver.ps1`
+   （给 INF 加 c811 硬件 ID 并重签 `.cat`；没有原私钥时加 `-NewCert`），用
+   `pnputil /add-driver ... /install` 验证，再在干净机器上确认首次运行能自动
+   绑定；INF/.cat/.cer 三个文件一起提交。
 
-只有第 3 步依赖签名；第 0/2 步失败就没必要做第 3 步。Mac 上改的源码在 Windows
-编译、上机之前都应视为“未验证源码”，不能写进证据表。
+只有第 3 步依赖签名。Mac 上改的源码在 Windows 编译、上机之前都应视为
+“未验证源码”，不能写进证据表。
 
 ## 7. 风险与未验证项
 
@@ -146,12 +147,13 @@ INF、托盘检测和两个 `Check-Binding.ps1` 的 `MI_02` 假设都要改。
 
 0. **实物只读确认**：`tools/Inspect-Hardware.ps1` 记录 PID/接口/驱动；
    `usb_probe.exe 0bda c811 --read8 00FC` 确认 chip-id `0x09`，不改驱动、不初始化。
-1. **Mac：源码同时支持 c811 / c820**：运行时按“实际存在的那张卡”选择，文档把
-   8811CU 写成推荐硬件。先保留 c820，方便 A/B 和回归；INF/.cat 不动。
+1. ✅ **Mac：源码同时支持 c811 / c820**（2026-11-17）：运行时按“实际存在的那张
+   卡”选择，文档把 8811CU 写成推荐硬件，保留 c820 方便 A/B 和回归；INF/.cat
+   未动。
 2. **Windows：Zadig 绑定 + Wi‑Fi 全链路验证**（不需要签名）：初始化/固件 →
    149/20 RX → TX 空口见证 → AWDL/iPhone → 真实文件。每步留证据。
-3. **Windows：自动安装收尾**（需要签名）：改 INF → `Build-DriverPackage.ps1`
-   → `pnputil` 安装 → 干净机器首次运行验证。
+3. **Windows：自动安装收尾**（需要签名）：运行
+   `tools\Enable-8811CU-Driver.ps1` → `pnputil` 安装 → 干净机器首次运行验证。
 4. 8811CU 全绿后，再决定是否**只**保留 8811CU，并更新 README/安装说明/发布清单。
 
 ## 9. 工作量估计

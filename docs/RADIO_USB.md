@@ -1,10 +1,21 @@
 # USB radio 后端（`src/radio_usb`）状态
 
-状态：**TCP 传输、硬件 RX、2.4 GHz TX 已打通；Phase 2 的核心链路可用，换信道/地址/ACK 与 Dart 客户端未测。**
+状态：**TCP 传输、硬件 RX、2.4 GHz TX 已打通；Phase 2 的核心链路可用，换信道/地址/ACK 与 Dart 客户端未测。** 2026-11-17 起源码同时支持 RTL8811CU / RTL8821CU，但 8811CU 的 Windows 编译与真机验证尚未做（Q71）。
+
+## 8811CU 支持（源码，未真机）
+
+- 打开逻辑：`AIRBRIDGE_PID` 未设置时依次尝试 `0xc811`（8811CU）、`0xc820`
+  （8821CU）；显式设置后只用该 PID，仍可用 `AIRBRIDGE_VID` 改 VID。
+- 8811CU 是单功能设备，`find_wifi_interface()` 会选到它的 vendor interface
+  （通常 interface 0）；8821CU 仍是 MI_02 / interface 2。接口号没有写死。
+- 托盘的 PnP 检测、两个 `Check-Binding.ps1`、`usb_probe` 已同时识别两种设备；
+  8811CU 没有蓝牙，beacon 仍走电脑自己的 BLE 适配器。
+- 尚未验证：Windows 编译、真实 8811CU 的 Init/固件、149/20 RX、TX 空口、
+  AWDL 与 AirDrop。不要引用 c820 的结果替代。
 
 ## 已实现并验证
 
-- `airbridge_radio.exe`：libusb 打开 `0bda:c820`、claim interface 2、`CreateRadio`、`InitWrite`、`SetTxMode`、`StartRxLoop`。
+- `airbridge_radio.exe`：libusb 打开 `0bda:c820`、claim interface 2、`CreateRadio`、`InitWrite`、`SetTxMode`、`StartRxLoop`（下列数字均为 8821CU）。
 - `radio_link` v3 帧格式（MIT）跑在 **localhost TCP（127.0.0.1:49876）** 上；HELLO 带 8 字节消息头。
 - 端口用 `SO_EXCLUSIVEADDRUSE`，避免其他本地服务抢连。
 - RX：客户端 10 秒收到 **311 帧、28957 字节**，含真实 beacon；RX 回调经有界队列 + 独立写线程，慢客户端不会阻塞 USB RX 环。

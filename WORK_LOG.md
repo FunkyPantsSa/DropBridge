@@ -1,5 +1,15 @@
 # 工作记录 / 下一位 Agent 交接
 
+## 2026-11-17：Q71 源码实现 c811 / c820 双识别
+
+- 背景：用户要把 Wi-Fi 从 RTL8821CU 换成 RTL8811CU，蓝牙保持独立；仓库已推到 fork `FunkyPantsSa/DropBridge`，用户在 Windows 上测试并反馈。
+- `airbridge_radio.exe`：未设置 `AIRBRIDGE_PID` 时依次尝试 `0xc811`（8811CU）、`0xc820`（8821CU）；显式设置仍优先，`AIRBRIDGE_VID` 保留。设备日志会打印实际打开的是哪一款。
+- 托盘 `RadioBinding`：PnP 查询同时支持 `USB\VID_0BDA&PID_C811`（整设备）与 `...C820&MI_02`；首启提示改为“8811CU / 8821CU”。若检测到 8811CU 但 INF 还没有 `PID_C811`，自动安装返回 4 并提示先用 Zadig，避免无意义提权后失败。
+- 工具/脚本：`tools/Check-Binding.ps1` 与 `packaging/setup/Check-Binding.ps1` 同时识别两种设备（8811CU 不再检查 MI_00 蓝牙）；`usb_probe` 无 PID 参数时自动探测 c811/c820；`Bind-WinUSB.cmd`、两份包内 README、`Package-Headless`/`Start-Chain` 注释同步。新增 `tools/Enable-8811CU-Driver.ps1`：Windows 上给 INF 加 c811 模型并重签 `.cat`，无原私钥可 `-NewCert`。
+- 文档：README、BINDING_RUNBOOK、RADIO_USB、PLAN、HARDWARE_INTAKE、STATUS、DISTRIBUTION、RELEASE_CHECKLIST 与 `docs/CHIP_SWITCH_8811CU.md` 同步；明确 8811CU 源码尚未在 Windows 编译/真机验证，现有实测仍来自 8821CU。
+- 未验证：Windows 编译、Zadig 绑定 c811、Init/固件、149/20 RX、TX 空口、AWDL/AirDrop；INF/.cat 未改动（按计划留到 Windows 用新脚本一次完成）。
+- 蓝牙：beacon 继续走 Windows BLE，与网卡无关；8811CU 无蓝牙，测试机需有 BLE 适配器。
+
 ## 2026-11-17：RTL8811CU 切换可行性评估
 
 - 问题：能否把 Wi-Fi 从 RTL8821CU 换成 RTL8811CU，蓝牙改由独立实现。

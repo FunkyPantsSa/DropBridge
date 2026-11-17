@@ -4,7 +4,7 @@
 
 ## 1. 只读枚举（不需要授权，不改任何东西）
 
-1. 把 RTL8821CU 网卡直连主板 USB 口（先不要经过 hub），记录插入的本地时间。
+1. 把 RTL8811CU / RTL8821CU 网卡直连主板 USB 口（先不要经过 hub），记录插入的本地时间。
 2. 运行：
 
    ```powershell
@@ -25,7 +25,7 @@
 
 ## 2. 身份交叉确认
 
-VID/PID 只能证明「这是哪一款 USB 设备」，不能证明硅片就是 RTL8821CU。完整确认需要：
+VID/PID 只能证明「这是哪一款 USB 设备」，不能证明硅片就是 8821C（8811CU/8821CU）。完整确认需要：
 
 1. 设备管理器 → 属性 → 详细信息 → 硬件 ID；
 2. 驱动 INF 与版本；
@@ -78,7 +78,7 @@ USB VID:PID / 接口 / 端点：
 
 ## 6. 当前状态（2026-10-27 13:08 +08:00）
 
-- 目标网卡已接入：`0bda:c820`，复合设备；MI_00 蓝牙，MI_02 Wi-Fi 厂商接口；MI_02 由 `netrtwlanu.inf` 1030.38.712.2019（服务 `RtlWlanu`）管理，网络适配器 `WLAN 2` 处于 Disconnected。
+- 目标网卡（2026-10-27 的 8821CU 历史记录）已接入：`0bda:c820`，复合设备；MI_00 蓝牙，MI_02 Wi-Fi 厂商接口；MI_02 由 `netrtwlanu.inf` 1030.38.712.2019（服务 `RtlWlanu`）管理，网络适配器 `WLAN 2` 处于 Disconnected。
 - 只读枚举当时共 30 个 USB 设备；完整实例路径在 `evidence/usb-devices.local.json`（git 忽略）。
 - 现有无线网卡还有 Intel Wi-Fi 6E AX211（非目标）；有线 I226-V 处于连接状态，可用于上网。
 - **已绑定 WinUSB**（2026-10-27 14:21）：MI_02 驱动变为 `oem155.inf`（libwdi 6.1.7600.16385），服务 `WinUSB`；蓝牙 MI_00 仍为 OK；`WLAN 2` 适配器已消失（预期）。步骤与回滚见 [BINDING_RUNBOOK.md](BINDING_RUNBOOK.md)。

@@ -367,12 +367,13 @@ internal sealed class Supervisor
     public readonly bool TcpMerge;
     // Opt-in PC -> phone: netd then also listens on 127.0.0.1:8772.
     public static bool AllowSend;
-    // Receive spatial streams advertised by awdld. The RTL8821CU is 1T1R, so 1
+    // Receive spatial streams advertised by awdld. The 8821C family
+    // (RTL8811CU / RTL8821CU) is 1T1R, so 1
     // is the honest value; --streams 2 exists only to A/B whether the extra
     // advertisement changes what the phone transmits (it is not a fix).
     public static int AwdldStreams = 1;
     public string RadioArguments { get { return _channel + " " + _width; } }
-    // RTL8821CU is 1T1R; announcing a second receive stream exceeds the hardware.
+    // The 8821C family is 1T1R; announcing a second receive stream exceeds the hardware.
     public string AwdldArguments { get { return "-c " + _channel + " -s " + AwdldStreams + " -j " + (TcpMerge ? "400" : "0") + " -v"; } }
     // 20 MHz is the default: measured 202 KB/s against 40 MHz's 190 KB/s after a
     // cold start, and 40 MHz has a degraded mode that needs a USB replug to clear.
@@ -1065,10 +1066,40 @@ internal sealed class Supervisor
 
 internal static class RadioBinding
 {
-    // One interface only: the Wi-Fi half of the RTL8821CU. MI_00 (Bluetooth) and
-    // the composite parent are never named here. WQL treats a backslash as an
-    // escape, so the runtime string needs doubled backslashes.
-    private const string Pattern = "USB\\\\VID_0BDA&PID_C820&MI_02";
+    // The Wi-Fi half of either supported adapter. RTL8811CU is a single-function
+    // device (0bda:c811, whole device); RTL8821CU is composite and its Wi-Fi
+    // function is MI_02 (0bda:c820). MI_00 (Bluetooth) and the composite parent
+    // are never named here. WQL treats a backslash as an escape, so the runtime
+    // string needs doubled backslashes.
+    private const string C811Pattern = "USB\\\\VID_0BDA&PID_C811";
+    private const string C820Pattern = "USB\\\\VID_0BDA&PID_C820&MI_02";
+
+    private static string Find(string pattern)
+    {
+        try
+        {
+            using (var searcher = new ManagementObjectSearcher(
+                       "SELECT DeviceID, Service FROM Win32_PnPEntity WHERE DeviceID LIKE '" + pattern + "%'"))
+            {
+                string fallback = null;
+                foreach (ManagementObject item in searcher.Get())
+                {
+                    string id = item["DeviceID"] as string ?? string.Empty;
+                    string service = item["Service"] as string ?? string.Empty;
+                    // A composite device also exposes a parent node without
+                    // &MI_; prefer the function node, which is what WinUSB binds.
+                    if (id.IndexOf("&MI_", StringComparison.OrdinalIgnoreCase) >= 0)
+                        return service;
+                    if (fallback == null) fallback = service;
+                }
+                return fallback;
+            }
+        }
+        catch
+        {
+        }
+        return null;
+    }
 
     internal static bool IsAdmin()
     {
@@ -1084,25 +1115,29 @@ internal static class RadioBinding
         }
     }
 
-    /// <summary>Service of the MI_02 interface, "" when present without one, null when absent.</summary>
+    /// <summary>Service of the Wi-Fi interface, "" when present without one, null when absent.</summary>
     internal static string Service()
+    {
+        string service = Find(C811Pattern);
+        if (service != null) return service;
+        return Find(C820Pattern);
+    }
+
+    /// <summary>True when a single-function RTL8811CU (0bda:c811) is present.</summary>
+    internal static bool Has8811Cu()
     {
         try
         {
             using (var searcher = new ManagementObjectSearcher(
-                       "SELECT DeviceID, Service FROM Win32_PnPEntity WHERE DeviceID LIKE '" + Pattern + "%'"))
+                       "SELECT DeviceID FROM Win32_PnPEntity WHERE DeviceID LIKE '" + C811Pattern + "%'"))
             {
-                foreach (ManagementObject item in searcher.Get())
-                {
-                    string service = item["Service"] as string;
-                    return service ?? string.Empty;
-                }
+                return searcher.Get().Count > 0;
             }
         }
         catch
         {
         }
-        return null;
+        return false;
     }
 
     internal static bool Bound(string service)
@@ -1126,15 +1161,17 @@ internal static class RadioBinding
     }
 
     /// <summary>
-    /// Bind MI_02 to WinUSB, elevating once if needed. Idempotent: when the
-    /// interface is already on WinUSB this returns 0 without touching anything.
+    /// Bind the Wi-Fi interface to WinUSB, elevating once if needed: the whole
+    /// device for the single-function RTL8811CU, or MI_02 for the composite
+    /// RTL8821CU. Idempotent: when it is already on WinUSB this returns 0
+    /// without touching anything.
     /// </summary>
     internal static int Install(string root, bool quiet, string logPath)
     {
         string service = Service();
         if (service == null)
         {
-            Log(logPath, "install: MI_02 not present; plug the card in first");
+            Log(logPath, "install: Wi-Fi interface not present; plug the card in first");
             return 3;
         }
         if (Bound(service))
@@ -1142,6 +1179,45 @@ internal static class RadioBinding
             Log(logPath, "install: already bound to WinUSB; nothing to do");
             return 0;
         }
+
+        string directory = DriverDirectory(root);
+        if (directory == null)
+        {
+            Log(logPath, "install: driver package missing under " + root);
+            return 1;
+        }
+        string inf = Path.Combine(directory, "airbridge-winusb.inf");
+        string cer = Path.Combine(directory, "dropbridge-driver.cer");
+        if (!File.Exists(inf))
+        {
+            Log(logPath, "install: INF missing next to the driver package");
+            return 1;
+        }
+        if (!File.Exists(cer))
+        {
+            Log(logPath, "install: certificate missing next to the INF");
+            return 1;
+        }
+
+        // The package can predate RTL8811CU support. Installing it cannot match
+        // a c811 device, so point at the Zadig fallback instead of elevating and
+        // failing later; after the INF is rebuilt this check passes by itself.
+        bool infSupports8811 = false;
+        try
+        {
+            infSupports8811 = File.ReadAllText(inf)
+                .IndexOf("PID_C811", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+        catch (Exception)
+        {
+        }
+        if (Has8811Cu() && !infSupports8811)
+        {
+            Log(logPath, "install: driver package has no RTL8811CU hardware ID; " +
+                         "use setup\\Bind-WinUSB.cmd (Zadig) until it is rebuilt on Windows");
+            return 4;
+        }
+
         if (!IsAdmin())
         {
             try
@@ -1170,20 +1246,6 @@ internal static class RadioBinding
             }
         }
 
-        string directory = DriverDirectory(root);
-        if (directory == null)
-        {
-            Log(logPath, "install: driver package missing under " + root);
-            return 1;
-        }
-        string inf = Path.Combine(directory, "airbridge-winusb.inf");
-        string cer = Path.Combine(directory, "dropbridge-driver.cer");
-        if (!File.Exists(cer))
-        {
-            Log(logPath, "install: certificate missing next to the INF");
-            return 1;
-        }
-
         int code = Run("certutil.exe", "-addstore -f Root \"" + cer + "\"", logPath);
         if (code != 0) return 1;
         code = Run("certutil.exe", "-addstore -f TrustedPublisher \"" + cer + "\"", logPath);
@@ -1193,7 +1255,7 @@ internal static class RadioBinding
 
         service = Service();
         bool bound = Bound(service);
-        Log(logPath, "install: after pnputil, MI_02 service=" + (service ?? "<absent>"));
+        Log(logPath, "install: after pnputil, Wi-Fi interface service=" + (service ?? "<absent>"));
         return bound ? 0 : 1;
     }
 
@@ -2388,7 +2450,7 @@ internal sealed class TrayApp : ApplicationContext
             if (service == null)
             {
                 _icon.ShowBalloonTip(6000, _icon.Text,
-                    "没找到 RTL8821CU 网卡：请直插机箱后面板的 USB 口。", ToolTipIcon.Warning);
+                    "没找到 RTL8811CU / RTL8821CU 网卡：请直插机箱后面板的 USB 口。", ToolTipIcon.Warning);
                 return;
             }
             if (RadioBinding.Bound(service)) return;
@@ -2421,7 +2483,14 @@ internal sealed class TrayApp : ApplicationContext
             }
             else if (code == 3)
             {
-                MessageBox.Show("没找到 RTL8821CU 网卡。\n请直插机箱后面板的 USB 口后重试。",
+                MessageBox.Show("没找到 RTL8811CU / RTL8821CU 网卡。\n请直插机箱后面板的 USB 口后重试。",
+                    "DropBridge", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+            else if (code == 4)
+            {
+                MessageBox.Show(
+                    "当前驱动包还没有 RTL8811CU 的硬件 ID，自动安装无法匹配这张网卡。\n\n" +
+                    "请先用 setup\\Bind-WinUSB.cmd 手动绑定（Zadig），或在 Windows 上重建驱动包后重试。",
                     "DropBridge", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
             else

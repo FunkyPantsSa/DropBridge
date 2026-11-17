@@ -22,5 +22,5 @@ Set-Location $awdlDir
 Write-Host "awdld channel $Channel, log: $log"
 # cmd handles the native stderr redirect, avoiding PowerShell 5.1's
 # NativeCommandError behavior when ErrorActionPreference is Stop.
-# RTL8821CU is 1T1R: advertise one spatial stream, as the tray does.
+# The 8821C family is 1T1R: advertise one spatial stream, as the tray does.
 cmd /c "awdld.exe -c $Channel -s 1 -j 400 -v > `"$log`" 2>&1"

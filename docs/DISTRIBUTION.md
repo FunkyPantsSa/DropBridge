@@ -11,7 +11,7 @@
 dist\DropBridge\                 ← 解压后就是这个文件夹（339 个文件，41.6 MB）
   DropBridge.exe                 ← 唯一入口：托盘监管（winexe，无控制台窗口）
   backend\
-    airbridge_radio.exe           RTL8821CU 驱动进程（GPL-2.0）
+    airbridge_radio.exe           RTL8811CU / RTL8821CU 驱动进程（GPL-2.0）
     radio_pipe_bridge.exe         管道桥（MIT）
     awdl_netd.exe                 lwIP/代理（含 Q38 的输入背压）
     awdld.exe                     AWDL 控制面（GPL-3.0）

@@ -26,7 +26,7 @@ python tools/esp32_witness/capture_serial.py COM17 70 evidence/esp32-witness-run
 同时由 Windows 侧发帧，例如：
 
 ```powershell
-$env:DEVOURER_PID='0xc820'
+$env:DEVOURER_PID='0xc811'   # RTL8811CU; use 0xc820 for RTL8821CU
 $env:DEVOURER_CHANNEL='6'
 $env:DEVOURER_TX_FRAMES='20'
 $env:DEVOURER_TX_GAP_US='50000'

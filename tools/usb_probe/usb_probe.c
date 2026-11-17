@@ -7,6 +7,8 @@
  *
  * Build: powershell -File tools/Build-UsbProbe.ps1
  * Usage: usb_probe.exe [vid_hex] [pid_hex] [--read8|--read32 <reg_hex>]
+ *        With no pid_hex, probes RTL8811CU (0bda:c811) then RTL8821CU
+ *        (0bda:c820).
  *
  * --read8/--read32 issue one Realtek vendor control READ (0xC0, bRequest 5),
  * the same transfer devourer uses before Init. devourer reads the chip id at
@@ -28,12 +30,17 @@ static const char *err_name(int code) {
 }
 
 int main(int argc, char **argv) {
-    uint16_t vid = 0x0bda, pid = 0xc820;
+    uint16_t vid = 0x0bda;
+    uint16_t pid = 0;
+    int pid_given = 0;
     int do_read = 0;
     int read_width = 0;
     uint16_t read_reg = 0;
     if (argc > 1) vid = (uint16_t)strtoul(argv[1], NULL, 16);
-    if (argc > 2) pid = (uint16_t)strtoul(argv[2], NULL, 16);
+    if (argc > 2) {
+        pid = (uint16_t)strtoul(argv[2], NULL, 16);
+        pid_given = 1;
+    }
     if (argc > 4 && strcmp(argv[3], "--read8") == 0) {
         do_read = 1;
         read_width = 1;
@@ -45,7 +52,11 @@ int main(int argc, char **argv) {
     }
 
     printf("libusb %s\n", libusb_get_version()->describe);
-    printf("target %04x:%04x\n", vid, pid);
+    if (pid_given) {
+        printf("target %04x:%04x\n", vid, pid);
+    } else {
+        printf("target %04x:auto (RTL8811CU c811, then RTL8821CU c820)\n", vid);
+    }
 
     libusb_context *ctx = NULL;
     int rc = libusb_init(&ctx);
@@ -62,23 +73,46 @@ int main(int argc, char **argv) {
         return 4;
     }
 
+    /* Both products are the same 8821C silicon. Prefer the Wi-Fi-only 8811CU
+     * when both are present; an explicit pid_hex bypasses this list. */
+    static const uint16_t candidates[] = {0xc811, 0xc820};
     libusb_device *target = NULL;
-    for (ssize_t i = 0; i < count; i++) {
-        struct libusb_device_descriptor desc;
-        if (libusb_get_device_descriptor(list[i], &desc) != 0) continue;
-        if (desc.idVendor == vid && desc.idProduct == pid) {
-            target = list[i];
-            break;
+    if (pid_given) {
+        for (ssize_t i = 0; i < count; i++) {
+            struct libusb_device_descriptor desc;
+            if (libusb_get_device_descriptor(list[i], &desc) != 0) continue;
+            if (desc.idVendor == vid && desc.idProduct == pid) {
+                target = list[i];
+                break;
+            }
+        }
+    } else {
+        for (size_t c = 0; c < sizeof(candidates) / sizeof(candidates[0]) && !target; c++) {
+            for (ssize_t i = 0; i < count; i++) {
+                struct libusb_device_descriptor desc;
+                if (libusb_get_device_descriptor(list[i], &desc) != 0) continue;
+                if (desc.idVendor == vid && desc.idProduct == candidates[c]) {
+                    pid = candidates[c];
+                    target = list[i];
+                    break;
+                }
+            }
         }
     }
 
     if (!target) {
-        printf("device not found on the bus\n");
+        if (pid_given) {
+            printf("device %04x:%04x not found on the bus\n", vid, pid);
+        } else {
+            printf("no RTL8811CU (0bda:c811) or RTL8821CU (0bda:c820) found on the bus\n");
+        }
         libusb_free_device_list(list, 1);
         libusb_exit(ctx);
         return 2;
     }
 
+    printf("found %04x:%04x (%s)\n", vid, pid,
+           pid == 0xc811 ? "RTL8811CU" : pid == 0xc820 ? "RTL8821CU" : "USB radio");
     printf("bus %u address %u speed %d\n",
            (unsigned)libusb_get_bus_number(target),
            (unsigned)libusb_get_device_address(target),
@@ -95,8 +129,8 @@ int main(int argc, char **argv) {
     rc = libusb_open(target, &handle);
     if (rc != 0) {
         printf("open failed: %s\n", err_name(rc));
-        printf("hint: MI_02 is still bound to a vendor driver; follow "
-               "docs/BINDING_RUNBOOK.md first.\n");
+        printf("hint: the Wi-Fi interface is still bound to a vendor driver; "
+               "follow docs/BINDING_RUNBOOK.md first.\n");
         libusb_free_device_list(list, 1);
         libusb_exit(ctx);
         return 1;

@@ -100,7 +100,7 @@ $configureLog = Join-Path $evidence 'build-8821c-configure.log'
 $buildLog = Join-Path $evidence 'build-8821c-build.log'
 $testLog = Join-Path $evidence 'build-8821c-ctest.log'
 
-Write-Host 'Configuring devourer (RTL8821CU only)...'
+Write-Host 'Configuring devourer (RTL8811CU / RTL8821CU only)...'
 $code = Invoke-Native -Exe $cmake -Arguments $configure -Log $configureLog
 Get-Content $configureLog -Tail 12
 if ($code -ne 0) {

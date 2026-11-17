@@ -1,6 +1,7 @@
 /* airbridge_radio: USB radio backend for AirBridge32.
  *
- * Owns the RTL8821CU through libusb/WinUSB and speaks the radio_link v3
+ * Owns an RTL8811CU or RTL8821CU (same 8821C silicon; 8821CU adds Bluetooth)
+ * through libusb/WinUSB and speaks the radio_link v3
  * protocol (MIT) over a localhost TCP socket. It does not parse AWDL or
  * AirDrop; those live in the Dart application (docs/ARCHITECTURE.md).
  *
@@ -57,6 +58,20 @@ constexpr int kRssiFloorDbm = -110;
 constexpr size_t kRadiotapBytes = 10;
 constexpr uint32_t kRadiotapPresent = (1u << 1) | (1u << 5);
 constexpr uint16_t kDefaultPort = 49876;
+
+/* Same 8821C silicon, two USB products: the 8811CU is Wi-Fi only, the 8821CU
+ * adds Bluetooth. Prefer the 8811CU when both are plugged in; an explicit
+ * AIRBRIDGE_PID still wins and is the escape hatch for other board IDs. */
+constexpr uint16_t kPid8811cu = 0xc811;
+constexpr uint16_t kPid8821cu = 0xc820;
+
+const char *usb_radio_name(uint16_t pid) {
+    switch (pid) {
+        case kPid8811cu: return "RTL8811CU";
+        case kPid8821cu: return "RTL8821CU";
+        default: return "USB radio";
+    }
+}
 
 int env_int(const char *name, int fallback) {
     const char *v = std::getenv(name);
@@ -240,9 +255,10 @@ int run(uint8_t channel, int width_mhz, uint16_t port, bool skip_reset) {
                           : Logger::Level::Info);
 
     // The supervisor stops children with TerminateProcess, which leaves the
-    // RTL8821CU in the middle of a USB transfer and wedges the chip until it is
-    // physically replugged (measured repeatedly: 0.03 s CPU for minutes, then
-    // "no device" or a hung init). Two handles let us stop cleanly instead:
+    // radio (RTL8811CU / RTL8821CU) in the middle of a USB transfer and wedges
+    // the chip until it is physically replugged (measured repeatedly: 0.03 s
+    // CPU for minutes, then "no device" or a hung init). Two handles let us
+    // stop cleanly instead:
     //   - Local\DropBridgeRadioStop, which the supervisor signals on a normal
     //     exit or a restart, and
     //   - the supervisor's own process handle, so a *crashed* or force-killed
@@ -286,15 +302,35 @@ int run(uint8_t channel, int width_mhz, uint16_t port, bool skip_reset) {
     }
 
     const uint16_t vid = env_hex16("AIRBRIDGE_VID", 0x0bda);
-    const uint16_t pid = env_hex16("AIRBRIDGE_PID", 0xc820);
-    libusb_device_handle *handle = libusb_open_device_with_vid_pid(ctx, vid, pid);
+    /* AIRBRIDGE_PID is an explicit override for an unlisted board. Without it,
+     * try the two known 8821C products; an unbound Realtek interface simply
+     * fails to open, so the next candidate is tried. */
+    const char *pid_override = std::getenv("AIRBRIDGE_PID");
+    libusb_device_handle *handle = nullptr;
+    uint16_t pid = 0;
+    if (pid_override != nullptr && *pid_override != '\0') {
+        pid = env_hex16("AIRBRIDGE_PID", 0);
+        handle = libusb_open_device_with_vid_pid(ctx, vid, pid);
+    } else {
+        const uint16_t candidates[] = {kPid8811cu, kPid8821cu};
+        for (uint16_t candidate : candidates) {
+            handle = libusb_open_device_with_vid_pid(ctx, vid, candidate);
+            if (handle != nullptr) {
+                pid = candidate;
+                break;
+            }
+        }
+    }
     if (!handle) {
-        logger->error("radio: no device {:04x}:{:04x} (is MI_02 on WinUSB?)",
-                      vid, pid);
+        logger->error(
+            "radio: no RTL8811CU (c811) or RTL8821CU (c820) on {:04x}: "
+            "is the Wi-Fi interface bound to WinUSB?",
+            vid);
         libusb_exit(ctx);
         WSACleanup();
         return 2;
     }
+    logger->info("radio: opened {} {:04x}:{:04x}", usb_radio_name(pid), vid, pid);
 
     if (stop_requested()) {
         logger->warn("radio: stop requested before USB reset; exiting");

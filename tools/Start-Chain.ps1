@@ -3,7 +3,7 @@
 #   powershell -ExecutionPolicy Bypass -File tools\Start-Chain.ps1            # dry run (default)
 #   powershell -ExecutionPolicy Bypass -File tools\Start-Chain.ps1 -Run       # actually starts the chain
 #
-# Starting the chain initialises the RTL8821CU and makes awdld transmit AWDL
+# Starting the chain initialises the RTL8811CU / RTL8821CU and makes awdld transmit AWDL
 # frames, so -Run needs the explicit hardware authorisation described in
 # docs/WORK_QUEUE.md. Without -Run the script only validates paths, ports and
 # prints the exact command lines it would use.
@@ -91,7 +91,7 @@ if ($busy.Count -gt 0) {
 
 $radioArgs = @($Channel, $Width)
 $joinWaitUs = if ($NoTcpMerge) { '0' } else { '400' }
-# RTL8821CU is 1T1R: advertise only one receive spatial stream.
+# The 8821C family is 1T1R: advertise only one receive spatial stream.
 $awdlArgs = @('-c', $Channel, '-s', '1', '-j', $joinWaitUs, '-v')
 $receiverArgs = @('-u', $binaries.receiver, '--name', 'DropBridge',
                   '--listen', '127.0.0.1', '--mdns-address-file', $addrFile,

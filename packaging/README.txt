@@ -8,18 +8,20 @@ DropBridge —— iPhone 隔空投送接收端（Windows，托盘常驻）
 
 运行条件
   - Windows 10 / 11，64 位。
-  - 一张 RTL8821CU 芯片的 USB 无线网卡（本项目验证过 0bda:c820）。
-    DropBridge 只用这张网卡，不影响电脑原来的 Wi-Fi。
+  - 一张 RTL8811CU（USB ID 0bda:c811，推荐）或 RTL8821CU（0bda:c820，兼容）
+    的 USB 无线网卡。DropBridge 只用这张卡，不影响电脑原来的 Wi-Fi。
+  - 蓝牙（可选）：RTL8811CU 本身没有蓝牙；beacon 用电脑自带的 BLE 适配器。
+    没有蓝牙也能接收，只是手机发现电脑更慢。
 
 第一次运行
   1. 把整个 DropBridge 文件夹解压到一个可写的目录（例如 D:\DropBridge）。
      不要放进 Program Files。
   2. 插上网卡，双击 DropBridge.exe。
   3. 网卡还没装好驱动的话，程序会先弹一个确认框，点「是」后再弹一次
-     「用户账户控制」请求管理员权限，然后自动把网卡的 MI_02（Wi-Fi）接口
-     换成 WinUSB 驱动。每台电脑只需要做一次，安装过程记在
-     data\logs\driver-install.txt。
-     ★ 只处理 MI_02。MI_00（蓝牙）不碰。
+     「用户账户控制」请求管理员权限，然后自动把网卡的 Wi-Fi 接口换成 WinUSB
+     驱动（8811CU 通常是整台设备；8821CU 是 MI_02 接口）。每台电脑只需要做一次，
+     安装过程记在 data\logs\driver-install.txt。
+     ★ 只碰 Wi-Fi 接口；8821CU 的 MI_00（蓝牙）不动。
      ★ 自动安装失败时，可以改用手动方式：双击 setup\Bind-WinUSB.cmd，
        按 setup\README.txt 的说明用 Zadig 绑定。
   4. 托盘出现图标后，网卡初始化约需 40–90 秒，完成后托盘会提示就绪。
@@ -81,6 +83,8 @@ DropBridge —— iPhone 隔空投送接收端（Windows，托盘常驻）
   - 这是内部测试版，没有代码签名，Windows SmartScreen 可能会弹警告。
   - radio 组件静态链接了 Realtek 固件，在固件再分发许可解决之前只能内部测试。
   - 只能接收（iPhone → 电脑）。从电脑发给 iPhone 已确认无法实现。
+  - RTL8811CU 的源码支持尚未在 Windows 真机上验证；现有实测速度数据仍来自
+    RTL8821CU（0bda:c820）。
   - 实测速度约 1.1 MB/s（29 MB 视频约 27 秒，信道 149、20 MHz），但波动较大。
   - 已知问题：第一次传完以后，手机偶尔会看不到电脑，这时用「重新启动后端」
     就能恢复；两台 iPhone 同时打开隔空投送时，速度会明显变慢。

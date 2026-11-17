@@ -4,7 +4,7 @@
 
 ## 架构决定
 
-目标数据流：iPhone 原生 AirDrop → RTL8821CU → WinUSB/libusb → devourer C8821C → USB radio 进程 → radio_link v3 命名管道 → WinAWDL/OWL Windows AWDL 与 IPv6 → AirDrop 接收/用户确认 → 安全保存文件。
+目标数据流：iPhone 原生 AirDrop → RTL8811CU（兼容 RTL8821CU） → WinUSB/libusb → devourer C8821C → USB radio 进程 → radio_link v3 命名管道 → WinAWDL/OWL Windows AWDL 与 IPv6 → AirDrop 接收/用户确认 → 安全保存文件。
 
 这是一条待验证的目标路线；当前有研究资料、隔离的 Windows 构建产物和只读枚举工具，无线层尚未上硬件验证。无线层优先 C++/C，上层先复用，不提前决定重写为单一语言或系统服务。首轮不用数据库、GUI、安装器。
 
@@ -26,7 +26,7 @@
 
 ## Phase 1：独立 USB 无线后端
 
-前置：只读身份已记录（`0bda:c820`，MI_02 为厂商接口，现有驱动 `netrtwlanu.inf`）；绑定只针对 MI_02，保留 MI_00 蓝牙和有线/I226 上网。绑定前先跑 `build/usb_probe/Release/usb_probe.exe`，确认当前驱动下 open 失败的基线，再按 `docs/BINDING_RUNBOOK.md` 以管理员绑定。
+前置：只读身份已记录（8821CU：`0bda:c820`，MI_02 为厂商接口；8811CU：`0bda:c811`，单功能整设备）。绑定只针对 Wi-Fi 接口：8811CU 是整设备，8821CU 只绑 MI_02、保留 MI_00 蓝牙；两种都保留有线/I226 上网。绑定前先跑 `build/usb_probe/Release/usb_probe.exe`，确认当前驱动下 open 失败的基线，再按 `docs/BINDING_RUNBOOK.md` 以管理员绑定。
 
 进度（2026-10-27）：只读 open/claim、芯片 ID `0x09`、首次 bring-up（频道 6，固件下载、BB/RF 表、IQK、RX 使能，零发帧）已完成；被动 RX 在频道 6（15 s，500 FCS 正常）和频道 36（12 s，4956 FCS 正常）各通过一次；2.4 GHz 空口 TX 由 ESP32-S3 见证，3/3 完整 reset 轮次各收到 20/20 唯一序号。完整 reset 是重复 TX 的必要条件（跳过 reset 曾出现 USB 提交成功但空中零帧）。下一步：反向验证、ACK/5 GHz 见证；TX 仍需单独授权。
 

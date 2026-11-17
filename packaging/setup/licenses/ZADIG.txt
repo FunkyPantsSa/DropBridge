@@ -11,10 +11,11 @@ Upstream:
   https://zadig.akeo.ie/
   https://github.com/pbatard/libwdi   (libwdi, the driver-install library Zadig uses)
 
-Why it is here: Windows ships a Realtek network driver for the RTL8821CU Wi-Fi
-interface (USB\VID_0BDA&PID_C820&MI_02). DropBridge talks to that interface
-through libusb, which needs the interface bound to WinUSB instead. Zadig does
-that binding once per machine, from `Bind-WinUSB.cmd`.
+Why it is here: Windows ships a Realtek network driver for the RTL8811CU
+(USB\VID_0BDA&PID_C811) or RTL8821CU (USB\VID_0BDA&PID_C820&MI_02) Wi-Fi
+interface. DropBridge talks to that interface through libusb, which needs it
+bound to WinUSB instead. Zadig does that binding once per machine, from
+`Bind-WinUSB.cmd`.
 
 Written offer for source code (GPLv3 section 6): the complete corresponding
 source for Zadig 2.9 and libwdi is available from the upstream locations above,

@@ -119,8 +119,9 @@ foreach ($license in @(
 
 Copy-Item (Join-Path $root 'packaging\README.txt') (Join-Path $stage 'README.txt') -Force
 
-# One-time driver binding helper: Zadig (GPLv3) + a script that only ever looks at
-# USB\VID_0BDA&PID_C820&MI_02, plus its licence and written source offer.
+# One-time driver binding helper: Zadig (GPLv3) + scripts that only ever look at
+# the Wi-Fi interface (0bda:c811 whole device or 0bda:c820 MI_02), plus their
+# licence and written source offer.
 robocopy (Join-Path $root 'packaging\setup') (Join-Path $stage 'setup') /E /NJH /NJS /NFL /NDL /NP | Out-Null
 if ($LASTEXITCODE -ge 8) { throw "robocopy failed with $LASTEXITCODE while staging setup" }
 
