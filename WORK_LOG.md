@@ -1,5 +1,14 @@
 # 工作记录 / 下一位 Agent 交接
 
+## 2026-11-17：RTL8811CU 切换可行性评估
+
+- 问题：能否把 Wi-Fi 从 RTL8821CU 换成 RTL8811CU，蓝牙改由独立实现。
+- 结论：可行。两者同属 8821C（Jaguar2、1T1R），devourer 的 `C8821C` 后端同时覆盖，且上游硬件验证机就是 8811CU（CF-811AC / `0bda:c811`）；本项目 beacon 一直走 Windows BLE API（实机 Intel AX211），与网卡无关，换 8811CU 后蓝牙代码零改动，但机器需另有 BLE 适配器。
+- 需要改的是设备身份假设：`airbridge_radio` 默认 PID、托盘/脚本的 `C820&MI_02` 匹配、WinUSB INF 硬件 ID、`usb_probe` 默认 PID、绑定说明与 README/文档。8811CU 通常不是复合设备，绑定对象从 `MI_02` 变成整设备，必须以实物枚举为准。
+- 硬门槛：INF 改动后 `airbridge-winusb.cat` 必须用原证书在 Windows 重签（`tools/Build-DriverPackage.ps1`），否则首启自动安装失效；本机为 macOS，只能改源码/脚本/文档。
+- 未验证/风险：本机 AWDL 全链路只在 c820 上跑过；8811CU 的 EFUSE/RFE、149 信道、TX 功率、ZeroCD `1a2b` 都要重测；性能不会因此提升（同 1T1R、无接收 BlockAck）。换卡与驱动重绑仍需按 AGENTS.md 单独授权。
+- 产出：`docs/CHIP_SWITCH_8811CU.md`；队列 Q71（⬜ 未开始）。
+
 ## 2026-11-10：新增发布前核对清单
 
 - 新增 `docs/RELEASE_CHECKLIST.md`，七部分：Windows 编译与测试、包内容、真机功能（含 Q68–Q70 改动的逐项验证）、干净机器从零安装与卸载回滚、许可证与合规、版本可复现与文档一致、发布动作。全部条目未完成。
