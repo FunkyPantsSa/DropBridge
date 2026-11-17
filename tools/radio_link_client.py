@@ -170,8 +170,9 @@ def main():
         )
         os._exit(0)
 
-    rt, frame = canonical_frame()
     if tx_count:
+        # RX-only runs must work on a fresh checkout without upstream/.
+        rt, frame = canonical_frame()
         for seq in range(tx_count):
             body = bytearray(frame)
             body[22] = (seq << 4) & 0xFF
