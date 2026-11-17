@@ -134,3 +134,42 @@ error MSB8066: CMakeLists.txt 的自定义生成已退出，代码为 1
 
 - 更早的文档写过 lwIP 2.2.2，但它从未锁定，Q50 时远程也没有 `STABLE-2_2_2_RELEASE` 标签；Q50 的构建因此不是历史测试包的逐字节重建。
 - 这几项没有写进 `sources.lock.json`：`tools/check_project.py` 要求该文件恰好 5 项，并且每项都要在 `upstream/<name>` 下有已恢复的副本。
+
+## 8. 只想先验证 RTL8811CU（radio-only 快速路径）
+
+完整链路需要五个上游仓库、lwIP 和 Python embed，但**验证 8811CU 的初始化与
+无线收发只需要 devourer + libusb**。新克隆的仓库里 `upstream/` 和 `build/deps/`
+都不在 git 里，所以第一次会缺；按下面恢复：
+
+```powershell
+# 1. vcpkg + libusb + pkgconf（需要网络；5–20 分钟）
+powershell -ExecutionPolicy Bypass -File .\tools\Setup-BuildDeps.ps1
+
+# 2. 锁定版本的 devourer（upstream/ 不入库）
+New-Item -ItemType Directory -Force .\upstream | Out-Null
+git clone https://github.com/OpenIPC/devourer.git .\upstream\devourer
+git -C .\upstream\devourer checkout 34a9e6f95c08da6cb7c4e621e070058e2cc5e779
+git -C .\upstream\devourer rev-parse HEAD   # 应与上面一致
+
+# 3. 编译只读探针和 radio（Build-Radio 会调用 Prepare-Devourer 打补丁）
+.\tools\Build-UsbProbe.ps1
+.\tools\Build-Radio.ps1
+```
+
+绑定网卡后（见 `docs/BINDING_RUNBOOK.md`；8811CU 选整设备，8821CU 选 MI_02）：
+
+```powershell
+# 注意 PowerShell 里相对路径要带 .\，否则会被当成模块名
+.\build\usb_probe\Release\usb_probe.exe 0bda c811 --read8 00FC
+.\build\radio_usb\Release\airbridge_radio.exe 149 20
+
+# 另开一个窗口验证 RX（radio 保持运行）
+python .\tools\radio_link_client.py rx 10
+```
+
+期望：探针输出 `found 0bda:c811 (RTL8811CU)`、`claim OK`、`read8 0x00fc = 0x09`；
+radio 输出 `radio: opened RTL8811CU 0bda:c811`，随后 `ready on channel 149`。
+如果 reset 后掉进 `0bda:1a2b` 或打不开，先 `set AIRBRIDGE_SKIP_RESET=1` 再试。
+
+这一步通过后再补 winawdl/owl/lwIP/Python，跑完整 AirDrop 链路；不要用 radio-only
+的结果替代 iPhone 实际传输。
