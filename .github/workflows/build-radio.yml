@@ -161,14 +161,25 @@ jobs:
       #   https://github.com/FunkyPantsSa/DropBridge/releases/download/ci-latest/<file>
       # It is a build output, not a product release; the source is this repo
       # plus the pinned devourer commit and patches/devourer-airbridge.patch.
+      #
+      # Done with the REST API instead of the gh CLI: gh treats "release not
+      # found" as a stderr error, which Windows PowerShell turns into a
+      # terminating NativeCommandError under $ErrorActionPreference = 'Stop'.
+      # Publishing is a convenience, so a failure here only logs and never
+      # fails the build.
       - name: Publish ci-latest prerelease (public download)
         if: github.ref == 'refs/heads/main'
         shell: powershell
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $ErrorActionPreference = 'Stop'
-          $tag = 'ci-latest'
+          $ErrorActionPreference = 'Continue'
+          $repo = $env:GITHUB_REPOSITORY
+          $headers = @{
+            Authorization = "Bearer $($env:GH_TOKEN)"
+            Accept        = 'application/vnd.github+json'
+            'User-Agent'  = 'dropbridge-ci'
+          }
           $files = @(
             'build\radio_usb\Release\airbridge_radio.exe',
             'build\radio_usb\Release\radio_pipe_bridge.exe',
@@ -178,13 +189,46 @@ jobs:
             'build\usb_probe\Release\libusb-1.0.dll'
           )
           $notes = "Automated build of $env:GITHUB_SHA by build-radio. CI test binaries only: not a product release, no signing. Source: this repository + devourer at the commit pinned in docs/sources.lock.json + patches/devourer-airbridge.patch."
-          gh release view $tag 2>$null | Out-Null
-          if ($LASTEXITCODE -ne 0) {
-            gh release create $tag --prerelease --title 'CI test build (radio)' --notes $notes
-            if ($LASTEXITCODE -ne 0) { throw 'gh release create failed' }
-          } else {
-            gh release edit $tag --notes $notes
+          try {
+            $release = $null
+            try {
+              $release = Invoke-RestMethod -UseBasicParsing `
+                -Uri "https://api.github.com/repos/$repo/releases/tags/ci-latest" `
+                -Headers $headers -Method Get -ErrorAction Stop
+            } catch {
+              Write-Host "ci-latest release not found yet: $($_.Exception.Message)"
+            }
+            if (-not $release) {
+              $payload = @{
+                tag_name         = 'ci-latest'
+                target_commitish = $env:GITHUB_SHA
+                name             = 'CI test build (radio)'
+                body             = $notes
+                prerelease       = $true
+              } | ConvertTo-Json
+              $release = Invoke-RestMethod -UseBasicParsing `
+                -Uri "https://api.github.com/repos/$repo/releases" `
+                -Headers $headers -Method Post -Body $payload `
+                -ContentType 'application/json' -ErrorAction Stop
+            }
+            $existing = Invoke-RestMethod -UseBasicParsing `
+              -Uri "https://api.github.com/repos/$repo/releases/$($release.id)/assets" `
+              -Headers $headers -ErrorAction SilentlyContinue
+            foreach ($asset in $existing) {
+              Invoke-RestMethod -UseBasicParsing `
+                -Uri "https://api.github.com/repos/$repo/releases/assets/$($asset.id)" `
+                -Headers $headers -Method Delete -ErrorAction SilentlyContinue | Out-Null
+            }
+            foreach ($file in $files) {
+              if (-not (Test-Path $file)) { Write-Host "missing $file"; continue }
+              $name = Split-Path $file -Leaf
+              Invoke-WebRequest -UseBasicParsing `
+                -Uri "https://uploads.github.com/repos/$repo/releases/$($release.id)/assets?name=$name" `
+                -Headers $headers -Method Post -InFile $file `
+                -ContentType 'application/octet-stream' -ErrorAction Stop | Out-Null
+              Write-Host "uploaded $name"
+            }
+            Write-Host 'published ci-latest'
+          } catch {
+            Write-Host "publish failed (build output is still in the artifact): $($_.Exception.Message)"
           }
-          gh release upload $tag @files --clobber
-          if ($LASTEXITCODE -ne 0) { throw 'gh release upload failed' }
-          Write-Host 'published ci-latest'
