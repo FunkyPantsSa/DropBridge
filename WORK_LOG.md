@@ -5,7 +5,8 @@
 - 问题：能否把 Wi-Fi 从 RTL8821CU 换成 RTL8811CU，蓝牙改由独立实现。
 - 结论：可行。两者同属 8821C（Jaguar2、1T1R），devourer 的 `C8821C` 后端同时覆盖，且上游硬件验证机就是 8811CU（CF-811AC / `0bda:c811`）；本项目 beacon 一直走 Windows BLE API（实机 Intel AX211），与网卡无关，换 8811CU 后蓝牙代码零改动，但机器需另有 BLE 适配器。
 - 需要改的是设备身份假设：`airbridge_radio` 默认 PID、托盘/脚本的 `C820&MI_02` 匹配、WinUSB INF 硬件 ID、`usb_probe` 默认 PID、绑定说明与 README/文档。8811CU 通常不是复合设备，绑定对象从 `MI_02` 变成整设备，必须以实物枚举为准。
-- 硬门槛：INF 改动后 `airbridge-winusb.cat` 必须用原证书在 Windows 重签（`tools/Build-DriverPackage.ps1`），否则首启自动安装失效；本机为 macOS，只能改源码/脚本/文档。
+- 硬门槛：INF 改动后 `airbridge-winusb.cat` 必须在 Windows 上重建并重签；原证书私钥不在也能用 `-Force` 新建自签证书（安装器导入随包 `.cer`）。本机为 macOS，只能改源码/脚本/文档，`.cat` 和真机验证都要在 Windows 做。
+- 测试路径：签名不是前置条件，代码也不是。现有 `airbridge_radio` 支持 `AIRBRIDGE_PID=0xc811`（`src/radio_usb/main.cpp:288-289`），先在 Windows 用 Zadig 手动把 c811 绑到 WinUSB，就能零代码跑 `usb_probe` → 初始化 → 149/20 RX → TX；全链路通过后再改代码、改 INF、重签并验证自动安装。Mac 改的源码在 Windows 编译上机前按“未验证源码”记录。
 - 未验证/风险：本机 AWDL 全链路只在 c820 上跑过；8811CU 的 EFUSE/RFE、149 信道、TX 功率、ZeroCD `1a2b` 都要重测；性能不会因此提升（同 1T1R、无接收 BlockAck）。换卡与驱动重绑仍需按 AGENTS.md 单独授权。
 - 产出：`docs/CHIP_SWITCH_8811CU.md`；队列 Q71（⬜ 未开始）。
 
