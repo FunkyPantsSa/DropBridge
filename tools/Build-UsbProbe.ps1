@@ -62,7 +62,10 @@ function Get-GeneratorArgs {
 
 $env:VCPKG_ROOT = $vcpkgRoot
 $env:PKG_CONFIG_PATH = Join-Path $installed 'lib\pkgconfig'
-$env:PKG_CONFIG_ARGN = '--msvc-syntax'
+# No --msvc-syntax here (it used to be set in the environment, where CMake
+# never reads it): FindPkgConfig understands -I/-l, not pkgconf's /I and
+# /LIBPATH:. Passing an empty PKG_CONFIG_ARGN also clears a stale value from
+# an existing build directory's CMakeCache.
 
 $configureLog = Join-Path $root 'evidence\usb-probe-configure.log'
 $buildLog = Join-Path $root 'evidence\usb-probe-build.log'
@@ -81,7 +84,8 @@ $configure = @('-S', $source, '-B', $build) + (Get-GeneratorArgs) + @(
     '-A', 'x64',
     "-DCMAKE_TOOLCHAIN_FILE=$toolchain",
     '-DVCPKG_TARGET_TRIPLET=x64-windows',
-    "-DPKG_CONFIG_EXECUTABLE=$pkgconf"
+    "-DPKG_CONFIG_EXECUTABLE=$pkgconf",
+    '-DPKG_CONFIG_ARGN='
 )
 
 Write-Host 'Configuring usb_probe...'

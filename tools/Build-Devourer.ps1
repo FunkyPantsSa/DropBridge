@@ -31,6 +31,7 @@ function Find-CMake {
     if ($command) { return $command.Source }
     $candidates = @(
         'D:\VSBuildTools\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe',
+        'C:\Program Files\Microsoft Visual Studio\2022\Enterprise\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe',
         'C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe',
         'C:\Program Files\Microsoft Visual Studio\2022\BuildTools\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe'
     )
@@ -64,8 +65,10 @@ if ($Clean -and (Test-Path $build)) {
 
 $env:VCPKG_ROOT = $vcpkgRoot
 $env:PKG_CONFIG_PATH = Join-Path $installed 'lib\pkgconfig'
-# pkgconf emits MSVC /I and /libpath: flags instead of -I and -L.
-$env:PKG_CONFIG_ARGN = '--msvc-syntax'
+# Do NOT set --msvc-syntax: CMake's FindPkgConfig only strips -I/-isystem and
+# -l<name>. pkgconf's MSVC syntax (/I, /LIBPATH:, foo.lib) leaves a literal
+# "/ID:/..." include directory and drops the library. vcpkg patches the libusb
+# .pc to -llibusb-1.0, which find_library() resolves to libusb-1.0.lib.
 
 $configure = @(
     '-S', $source,
@@ -74,6 +77,7 @@ $configure = @(
     "-DCMAKE_TOOLCHAIN_FILE=$toolchain",
     '-DVCPKG_TARGET_TRIPLET=x64-windows',
     "-DPKG_CONFIG_EXECUTABLE=$pkgconf",
+    '-DPKG_CONFIG_ARGN=',
     '-DDEVOURER_JAGUAR1=OFF', '-DDEVOURER_8814=OFF',
     '-DDEVOURER_JAGUAR2_8822B=OFF', '-DDEVOURER_JAGUAR2_8821C=ON',
     '-DDEVOURER_JAGUAR3_8822C=OFF', '-DDEVOURER_JAGUAR3_8822E=OFF',

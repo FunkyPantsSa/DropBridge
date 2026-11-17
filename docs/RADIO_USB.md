@@ -47,13 +47,18 @@
 ```powershell
 $env:VCPKG_ROOT = "build/deps/vcpkg"
 $env:PKG_CONFIG_PATH = "build/deps/vcpkg/installed/x64-windows/lib/pkgconfig"
-$env:PKG_CONFIG_ARGN = "--msvc-syntax"
-cmake -S src/radio_usb -B build/radio_usb -G "Visual Studio 17 2022" -A x64 `
+# 不要加 PKG_CONFIG_ARGN=--msvc-syntax：CMake 的 FindPkgConfig 只认 -I/-l，
+# pkgconf 的 /I、/LIBPATH: 会变成不存在的 "/ID:/..." include 目录。
+cmake -S src/radio_usb -B build/radio_usb -A x64 `
   -DCMAKE_TOOLCHAIN_FILE=build/deps/vcpkg/scripts/buildsystems/vcpkg.cmake `
   -DVCPKG_TARGET_TRIPLET=x64-windows `
-  -DPKG_CONFIG_EXECUTABLE=build/deps/vcpkg/installed/x64-windows/tools/pkgconf/pkgconf.exe
+  -DPKG_CONFIG_EXECUTABLE=build/deps/vcpkg/installed/x64-windows/tools/pkgconf/pkgconf.exe `
+  -DPKG_CONFIG_ARGN=
 cmake --build build/radio_usb --config Release --target airbridge_radio
 ```
+
+> 生成器不写死：有 VS 2022 时加 `-G "Visual Studio 17 2022"`；镜像上只有更新
+> 的 VS 时省略 `-G`，让 CMake 选默认。`tools/Build-Radio.ps1` 已自动判断。
 
 运行：`build/radio_usb/Release/airbridge_radio.exe 6 20`（初始化后监听 `127.0.0.1:49876`）。
 

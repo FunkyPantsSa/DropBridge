@@ -1,12 +1,14 @@
 # 工作记录 / 下一位 Agent 交接
 
-## 2026-11-17 晚：GitHub Actions 编 radio（第一次运行失败 → 修生成器）
+## 2026-11-17 晚：GitHub Actions 编 radio（两次失败 → 修生成器、修 pkgconf 语法）
 
 - 本机无 MSVC/CMake/Windows SDK（只有 in-box csc，能编托盘），radio 编不出来；新增 `.github/workflows/build-radio.yml`，在 CI 上复现 `docs/BUILD_WINDOWS.md` §8 的 radio-only 路径：按 `sources.lock.json` 只 fetch devourer 的锁定 SHA → `Prepare-Devourer.ps1` 打补丁 → vcpkg 装 libusb/pkgconf → `Build-UsbProbe.ps1`、`Build-Radio.ps1`（含两个离线 CTest）→ 上传 exe artifact。
 - 本地先验证过：YAML 可解析、6 个 PowerShell 步骤语法通过、空目录沙箱里「fetch 指定 SHA + `Prepare-Devourer.ps1` 打补丁」成功（9 个文件改动）。
 - **第一次 CI 运行失败**：`usb_probe` configure 报 `could not find any instance of Visual Studio`。根因是 `windows-latest` 已迁到 windows-2025 + VS 2026，而 `Build-Radio.ps1`/`Build-UsbProbe.ps1` 写死 `-G "Visual Studio 17 2022"`；CMake 要到 4.2 才认识 `Visual Studio 18 2026` 生成器（社区同类修复：Sokol.NET b13dffb、rakupp bb95496、scikit-build-core #1326）。
-- 修法：① 两个脚本不再写死生成器，用 `vswhere` 探测到 VS 17.x 才显式 `-G "Visual Studio 17 2022"`，否则交给 CMake 选默认（最新）VS；补上 VS 2022 Enterprise 的 cmake 候选路径。② 工作流 `runs-on` 固定 `windows-2022`（有 VS 2022，和文档/脚本验证过的一致）；注释说明将来换回 `windows-latest` 需要镜像 CMake ≥ 4.2。③ 加「Toolchain and Visual Studio」诊断步骤（vswhere 安装列表 + CMake 支持的 VS 生成器），失败时上传 `evidence/usb-probe-*.log` 与 `CMakeConfigureLog.yaml`。
-- **未验证**：第二次 CI 运行还没跑（等 push）。真正悬念是 Q71 的 c811 双识别源码从未在 Windows 编译过，可能还有编译/链接错误。
+- **第二次 CI 运行**：生成器问题解决了（usb_probe 编过），`radio` configure 又失败：`PkgConfig::libusb` 的 include 目录变成字面量 `/ID:/a/.../installed/x64-windows/debug/../include/libusb-1.0`。根因是 `--msvc-syntax`：CMake 的 `FindPkgConfig` 只按 `-I`/`-isystem`/`-l<name>` 的正则解析（见 CMake 3.31 模块源码），pkgconf 的 `/I`、`/LIBPATH:`、`foo.lib` 它都不认，`/I` 粘在路径上后被当成绝对路径 `/ID:/...`，库名也一并丢掉。vcpkg 的 libusb 端口本来就把 `.pc` 从 `-lusb-1.0` 改成 `-llibusb-1.0`（`ports/libusb/portfile.cmake:36`），`find_library()` 会解析成 `libusb-1.0.lib` 绝对路径，所以默认语法就能链接。
+- **第一次失败的修法**：① 两个脚本不再写死生成器，用 `vswhere` 探测到 VS 17.x 才显式 `-G "Visual Studio 17 2022"`，否则交给 CMake 选默认（最新）VS；补上 VS 2022 Enterprise 的 cmake 候选路径。② 工作流 `runs-on` 固定 `windows-2022`（有 VS 2022，和文档/脚本验证过的一致）；注释说明将来换回 `windows-latest` 需要镜像 CMake ≥ 4.2。③ 加「Toolchain and Visual Studio」诊断步骤（vswhere 安装列表 + CMake 支持的 VS 生成器），失败时上传 `evidence/usb-probe-*.log` 与 `CMakeConfigureLog.yaml`。
+- **第二次失败的修法**：`Build-Radio.ps1`、`Build-UsbProbe.ps1`、`Build-Devourer.ps1` 一律传空 `-DPKG_CONFIG_ARGN=`（同时清掉旧 CMakeCache 里的旧值），`Build-Radio.ps1` 增加 release-only `PKG_CONFIG_PATH`；`tools/usb_probe/CMakeLists.txt` 与 `docs/BUILD_WINDOWS.md` §3、`docs/PHASE0_AUDIT.md`、`docs/RADIO_USB.md` 里「必须加 `--msvc-syntax`」的旧结论已更正（那个结论在 CMake 4.x 上碰巧能过，在 3.31 上必挂）。
+- **未验证**：第三次 CI 运行还没跑（等 push）。真正的悬念是 Q71 的 c811 双识别源码从未在 Windows 编译过，可能还有编译/链接错误；另外 vcpkg 同时装 debug/release 两份 libusb，若 configure 抓到 debug `.pc`，Release 链接可能出现运行库不匹配（已用 release-only `PKG_CONFIG_PATH` 规避，但要等实跑确认）。
 - 边界：工作流不碰硬件、不签名、不打包；artifact 含 `airbridge_radio.exe`、`radio_pipe_bridge.exe`、两个测试 exe、`usb_probe.exe`、`libusb-1.0.dll`。
 
 ## 2026-11-17 晚：8811CU 绑定复核 + 旧 radio 二进制真机冒烟（Q71）

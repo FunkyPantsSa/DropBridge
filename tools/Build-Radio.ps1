@@ -45,11 +45,20 @@ function Get-GeneratorArgs {
 }
 
 $generatorArgs = Get-GeneratorArgs
+# No --msvc-syntax: CMake's FindPkgConfig only understands -I/-isystem and
+# -l<name> (its regex is "(^| )(-I|-isystem ?)" / "(^| )-l"). pkgconf's MSVC
+# syntax emits "/I<path>" and "/LIBPATH:" instead, so the /I sticks to the
+# path and CMake ends up with a bogus "/ID:/..." include directory. vcpkg's
+# libusb port already rewrites the .pc from -lusb-1.0 to -llibusb-1.0
+# (ports/libusb/portfile.cmake), so the default syntax links correctly too.
+# PKG_CONFIG_PATH points at the release .pc so the debug/.. variant is not
+# picked up in a Release configure.
+$env:PKG_CONFIG_PATH = Join-Path $vcpkg 'installed\x64-windows\lib\pkgconfig'
 & $cmake -S (Join-Path $root 'src\radio_usb') -B (Join-Path $root 'build\radio_usb') `
     @generatorArgs -A x64 `
     "-DCMAKE_TOOLCHAIN_FILE=$vcpkg\scripts\buildsystems\vcpkg.cmake" `
     "-DPKG_CONFIG_EXECUTABLE=$vcpkg\installed\x64-windows\tools\pkgconf\pkgconf.exe" `
-    '-DPKG_CONFIG_ARGN=--msvc-syntax'
+    '-DPKG_CONFIG_ARGN='
 if ($LASTEXITCODE -ne 0) { throw 'radio configure failed' }
 & $cmake --build (Join-Path $root 'build\radio_usb') --config Release --parallel 8 `
     --target airbridge_radio radio_pipe_bridge peer_telemetry_test channel_completion_test

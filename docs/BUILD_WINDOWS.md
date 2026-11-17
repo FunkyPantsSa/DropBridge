@@ -49,7 +49,16 @@ powershell -ExecutionPolicy Bypass -File tools/Build-Devourer.ps1
 
 两个关键点：
 
-1. **必须让 pkgconf 输出 MSVC 语法。** CMake 的 `FindPkgConfig` 不会自动加 `--msvc-syntax`；不加时 `-L... -llibusb-1.0` 无法被 MSVC 链接器使用。构建脚本设置 `PKG_CONFIG_ARGN=--msvc-syntax`，pkgconf 输出 `/libpath:... libusb-1.0.lib`。
+1. **不要给 pkgconf 加 `--msvc-syntax`。** CMake 的 `FindPkgConfig` 只按
+   `-I` / `-isystem` / `-l<name>` 解析（见其正则 `(^| )(-I|-isystem ?)`），
+   pkgconf 的 MSVC 语法（`/I<path>`、`/LIBPATH:`、`foo.lib`）它一律不认：
+   `/I` 会粘在路径上，变成字面量 `/ID:/...` 的 include 目录，库名也会丢。
+   vcpkg 的 libusb 端口已经把 `.pc` 里的 `-lusb-1.0` 改成 `-llibusb-1.0`
+   （`ports/libusb/portfile.cmake`），`find_library()` 能解析成
+   `libusb-1.0.lib` 的绝对路径，所以默认语法就能链接。构建脚本现在传
+   `-DPKG_CONFIG_ARGN=`（空值，同时清掉旧 CMakeCache 里的 `--msvc-syntax`）。
+   本节 §3 记录的 2026-10-30 那次构建用的是旧写法，可用但依赖 CMake 版本运气，
+   已按上面改正。
 2. **路径含空格可用。** 项目位于 `J:\New soft project\DropBridge`，pkgconf 的转义由 CMake 的 `separate_arguments` 还原，配置与构建均通过。
 
 ## 4. 结果
@@ -216,10 +225,12 @@ Studio`；CMake 要到 4.2 才认识 `Visual Studio 18 2026` 生成器。因此�
 托盘（in-box csc 本机能编，但工作流暂未加）、Python embed、打包与签名。私有仓库
 下载 artifact 需要登录 GitHub；公开仓库才有匿名下载链接。
 
-> 状态（2026-11-17）：第一次运行在 `usb_probe` configure 阶段失败——当时 runner 还是
-> `windows-latest`，镜像已迁到 VS 2026，脚本里写死的 `-G "Visual Studio 17 2022"`
-> 报 `could not find any instance of Visual Studio`。已改成「`vswhere` 探测生成器 +
-> runner 固定 `windows-2022`」，并加了失败时上传 CMake 配置日志的步骤；**第二次
-> 运行还没跑**，编过与否要以那次的 artifact / 日志为准，跑完后把运行 URL 和产物
-> SHA-256 补进 WORK_QUEUE / WORK_LOG。
+> 状态（2026-11-17）：第一次运行在 `usb_probe` configure 失败——runner 已迁到
+> VS 2026，脚本写死的 `-G "Visual Studio 17 2022"` 报 `could not find any instance
+> of Visual Studio`；改成 `vswhere` 探测生成器 + runner 固定 `windows-2022`。
+> 第二次运行过了 usb_probe，`radio` configure 失败：`PkgConfig::libusb` 的 include
+> 目录变成字面量 `/ID:/.../debug/../include/libusb-1.0`——原因是 `--msvc-syntax`。
+> 已改成空 `PKG_CONFIG_ARGN` + release-only `PKG_CONFIG_PATH`。**第三次运行还没跑**；
+> 编过与否以那次的 artifact / 日志为准，跑完后把运行 URL 和产物 SHA-256 补进
+> WORK_QUEUE / WORK_LOG。
 

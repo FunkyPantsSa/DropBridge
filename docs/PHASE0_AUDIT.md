@@ -112,7 +112,7 @@ Windows 设备绑定方案：目标是让 libusb 通过 WinUSB 访问专用 Wi-F
 
 - 源码 OpenIPC/devourer `f7e0731`；C8821C-only；MSVC 19.44.35228.0；Windows SDK 10.0.26100.0；CMake 3.31.6；vcpkg 2026-09-26；libusb 1.0.30；pkgconf 3.0.3；OpenSSL 3.6.5。
 - 依赖隔离在 `build/deps`，未执行 `vcpkg integrate install`，未改 PATH。
-- 关键坑：CMake 的 PkgConfig 不会自动加 `--msvc-syntax`，必须设置 `PKG_CONFIG_ARGN=--msvc-syntax`，否则 MSVC 无法使用 `-L/-l` 形式的 libusb 参数。
+- 关键坑：~~CMake 的 PkgConfig 不会自动加 `--msvc-syntax`，必须设置 `PKG_CONFIG_ARGN=--msvc-syntax`，否则 MSVC 无法使用 `-L/-l` 形式的 libusb 参数。~~ **2026-11-17 更正**：这条是错的。CMake 的 `FindPkgConfig` 只解析 `-I`/`-l`，`--msvc-syntax` 的 `/I`、`/LIBPATH:` 反而会生成 `/ID:/...` 这种不存在的 include 目录（GitHub Actions 上实测 configure 失败）。vcpkg 的 libusb `.pc` 已被改成 `-llibusb-1.0`，默认语法下 `find_library()` 能解析出 `libusb-1.0.lib`；构建脚本现在传空 `-DPKG_CONFIG_ARGN=`。见 `docs/BUILD_WINDOWS.md` §3 与 §9。
 - 产物：`devourer.lib`、`rxdemo.exe`、`txdemo.exe` 及全部自检程序；`ctest` 74/74 通过，3 项跳过（`la_csi_math`、两项 MT7612U，均与 8821C 无关）。
 - 加密自检：安装 OpenSSL 后 `supplicant`、`station_sm`、`ccmp_framing` 构建并通过；`sta_client_headless` 是 Linux-only（TAP），Windows 按设计不构建。
 - 细节与哈希见 `docs/BUILD_WINDOWS.md`，日志 `evidence/build-8821c-*.log`。这证明的是**Windows 编译与无硬件自检**，不是硬件可用。
