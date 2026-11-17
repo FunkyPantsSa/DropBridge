@@ -6,15 +6,15 @@
 
 ## 1. 一句话
 
-DropBridge 是 Windows 上的 AirDrop 接收端，交付形态是一个文件夹加一个托盘程序。iPhone 用系统自带的隔空投送，通过专用的 RTL8811CU USB 网卡（兼容 RTL8821CU）把文件传到电脑上。8811CU 已在 Windows 真机上完成绑定与射频初始化（Q71，2026-11-17：旧 radio 二进制 3 次 bring-up 通过），但**当前源码还没编出 radio，TX/AWDL/AirDrop 与真实文件传输也还没在 8811CU 上跑过**；现有传输数字都来自 8821CU。**iPhone → Windows 已在真机上稳定达到约 1.1 MB/s**（29,456,959 B 视频 26.84 s / 26.89 s，Q46 / Q54），最好成绩 1121 KB/s。还没解决的有两件事：传完一次以后有时发现不了设备，以及多台手机同时在线时降速。Windows → iPhone 发送已确认无法实现，本项目只做接收。
+DropBridge 是 Windows 上的 AirDrop 接收端，交付形态是一个文件夹加一个托盘程序。iPhone 用系统自带的隔空投送，通过专用的 RTL8811CU USB 网卡（兼容 RTL8821CU）把文件传到电脑上。8811CU 已在 Windows 真机上完成绑定、射频初始化，并且**当前源码经 GitHub Actions 编出的 radio 已能自动识别 c811、在 149/20 完成 bring-up**（Q71，2026-11-17）；但 TX 空口、AWDL/AirDrop 与真实文件传输还没在 8811CU 上跑过，现有传输数字都来自 8821CU。**iPhone → Windows 已在真机上稳定达到约 1.1 MB/s**（29,456,959 B 视频 26.84 s / 26.89 s，Q46 / Q54），最好成绩 1121 KB/s。还没解决的有两件事：传完一次以后有时发现不了设备，以及多台手机同时在线时降速。Windows → iPhone 发送已确认无法实现，本项目只做接收。
 
 每项结论的验证层级不同，下表分开列出，彼此不能替代：
 
 | 层级 | 现状 |
 | --- | --- |
-| 源码实现 | 接收链路、托盘监管、设置、通知、自动装驱动、beacon 均已完成；Q68、Q69、Q70 三轮审查修复和 Q71 的 c811/c820 双识别只有源码改动 |
-| 本机编译 | 最近一次完整编译和打包是 Q50（2026-10-30）及 Q59–Q67 的托盘重编。**Q68、Q69、Q70 都没有编译、没有运行测试**（Q69、Q70 在没有 Windows 工具链的 Linux 环境里完成），所以当前 HEAD 与最后一次测过的包并不相同 |
-| 本机硬件 | 2026-11-17：8811CU 已绑 WinUSB（Zadig/libwdi，problem code 0），改动前的 radio 二进制用 `AIRBRIDGE_PID=0xc811` 连续 3 次完成固件/BB/RF/149-20/RX bring-up，干净停止后设备仍正常；**但当前源码编出的 radio 还没上机，TX 空口、AWDL、AirDrop 均未在 8811CU 验证**。8821CU 的初始化、RX/TX、起停与楔死修复（Q55/Q57/Q58）已在真机验证 |
+| 源码实现 | 接收链路、托盘监管、设置、通知、自动装驱动、beacon 均已完成；Q68、Q69、Q70 三轮审查修复和 Q71 的 c811/c820 双识别已改源码 |
+| 本机编译 | 2026-11-17：托盘（Q68–Q70 的 C#）`Build-Supervisor.ps1 -Test` 在本机通过；`airbridge_radio.exe` 由 GitHub Actions `build-radio`（windows-2022 + 锁定的 devourer + vcpkg）编出并通过两个离线单测。本机仍没有 MSVC/CMake/Windows SDK，netd/awdld/bridge 没有在本地或 CI 编译过；完整打包仍停留在 Q50（2026-10-30） |
+| 本机硬件 | 2026-11-17：8811CU 已绑 WinUSB（Zadig/libwdi，problem code 0）。CI 编出的当前源码 radio **不设 `AIRBRIDGE_PID` 自动识别 c811**，149/20 bring-up 43.4 s、退出码 0、设备仍 problem 0；`usb_probe` 读到 chip-id `0x09`；改动前的旧二进制用 PID 覆盖连跑 3 次也通过。**TX 空口、AWDL、iPhone 发现与 AirDrop 仍未在 8811CU 验证**。8821CU 的初始化、RX/TX、起停与楔死修复（Q55/Q57/Q58）已在真机验证 |
 | 真实文件传输 | Q45（1.2 MB 图片 1.23 s）、Q46（29 MB 1.0975 MB/s）、Q54（1.10 / 1.09 MB/s）的落盘哈希都与源文件一致 |
 
 ## 2. 交付形态
@@ -109,7 +109,7 @@ DropBridge\                唯一形态：一个文件夹，外加同样内容�
 
 1. **Q51 发现丢失和多机降速**：一次传输成功后，手机再发起的 TCP/TLS 连接会反复失败，重启链路能恢复；两台手机同时在线时降到 0.08–0.12 MB/s，慢传窗口里 CRC 错误占约 67–70%。根因尚未查清。
 2. **Q48 Windows → iPhone 发送：已确认无法实现，终止**（用户 2026-11-04 确认）。发现、出站 TCP 和 TLS 握手都已走通，但 iPhone 用 TLS alert 拒绝了本项目的自签证书。
-3. **Q68–Q71 待验证**：除下面这几项外全部只有源码。Q71 的 8811CU 已在 Windows 完成绑定与旧二进制初始化（2026-11-17），**还差**当前源码的 radio/netd 编译、TX 空口注入、AWDL 控制面、iPhone 发现与 AirDrop、真实文件传输。需要在 Windows 上运行 `Build-Supervisor.ps1 -Test`、`Build-Sfx.ps1`，用 MSVC 编译 netd/radio/bridge、MinGW 编译 awdld，跑 `ctest -R netd_`；在 `D:\`、含空格的路径、含空格的设备名下各收一次文件；托盘内多次「重置链路」确认 radio 能重新起来；启动中途退出确认没有残留进程；无蓝牙机器上看 beacon 的退避与 10 分钟重试；真机发现与传输确认管道桥的重叠 I/O 没有回退。完整清单见 [WORK_QUEUE.md](WORK_QUEUE.md) 的 Q68–Q71 各行。
+3. **Q68–Q71 待验证**：除下面这几项外全部只有源码。Q71 的 8811CU 已在 Windows 完成绑定、旧二进制初始化，并且**当前源码经 CI 编译后在真机自动识别 c811、149/20 bring-up 通过**（2026-11-17）；**还差** netd/awdld/bridge 编译、TX 空口注入、AWDL 控制面、iPhone 发现与 AirDrop、真实文件传输。需要在 Windows 上运行 `Build-Supervisor.ps1 -Test`、`Build-Sfx.ps1`，用 MSVC 编译 netd、MinGW 编译 awdld，跑 `ctest -R netd_`；在 `D:\`、含空格的路径、含空格的设备名下各收一次文件；托盘内多次「重置链路」确认 radio 能重新起来；启动中途退出确认没有残留进程；无蓝牙机器上看 beacon 的退避与 10 分钟重试；真机发现与传输确认管道桥的重叠 I/O 没有回退。完整清单见 [WORK_QUEUE.md](WORK_QUEUE.md) 的 Q68–Q71 各行。
    Q70 记下的遗留：停止信号在 `InitWrite` 期间到达仍会等到 15 秒后强杀；radio accept 失败路径仍可能 detach；每次启动用唯一停止事件名没有实现；`tools/Run-AwdlAdmin.ps1` 因不再拷贝 Wintun 而必然失败，不属于当前链路，是否删除待定。
 4. **Q43**：receiver 解析 `/Discover` 的分块格式过严，已有 WARNING 但还没修。
 5. **Q7**：radio 假死检测已由 Q57 实现，24 h 常驻测试还没跑完。

@@ -1,5 +1,17 @@
 # 工作记录 / 下一位 Agent 交接
 
+## 2026-11-17 晚：CI 编出的当前源码 radio 在 8811CU 上实测通过
+
+- GitHub Actions `build-radio` 第 3 次运行（commit `19007a9`）全绿：radio + usb_probe 编译、两个离线 CTest 通过；用户下载 artifact 到 `F:\tmp\dropbridge-radio-win-x64\`。
+- **真机（8811CU，WinUSB）**：
+  - `usb_probe.exe 0bda c811 --read8 00FC` → `found 0bda:c811 (RTL8811CU)`、`claim OK`、`read8 0x00fc = 0x09`、interface 0 五个端点、exit 0；
+  - **不设 `AIRBRIDGE_PID`** 跑 `airbridge_radio.exe 149 20` → `radio: opened RTL8811CU 0bda:c811`（自动识别生效）、C8821C cut=4 1T1R、ch149、RX enabled、43.4 s 就绪、退出码 0、无残留、设备 problem code 0；
+  - artifact 内两个离线测试本地 PASS。
+- 公开下载：`ci-latest` prerelease（匿名可下，无需登录）：`https://github.com/FunkyPantsSa/DropBridge/releases/download/ci-latest/airbridge_radio.exe`。发布版二进制（另一份构建，sha256 `DC1FACCF…`）复测：第一次卡在 `DLFW: download OK → polling FW boot`（已知偶发，重试即可），第二次 41.7 s 就绪。
+- 观察：用户自己跑的 ch6（2.4 GHz）也能 bring-up（is_btg=1、IQK 0/0），但日志有 `apply_tx_power path 0 ch6 EFUSE base unprogrammed — leaving TXAGC default`，即 2.4G 用默认 TX 功率表；AWDL social 信道含 ch6，空口时要实测确认。
+- 未验证：TX 空口注入、AWDL、iPhone 发现/AirDrop、真实文件传输；netd/awdld/bridge 仍未编译。
+- 证据：`evidence/q71-ci-radio-c811-2026-11-17.log`；Q71 状态与 STATUS 已同步。
+
 ## 2026-11-17 晚：GitHub Actions 编 radio（两次失败 → 修生成器、修 pkgconf 语法）
 
 - 本机无 MSVC/CMake/Windows SDK（只有 in-box csc，能编托盘），radio 编不出来；新增 `.github/workflows/build-radio.yml`，在 CI 上复现 `docs/BUILD_WINDOWS.md` §8 的 radio-only 路径：按 `sources.lock.json` 只 fetch devourer 的锁定 SHA → `Prepare-Devourer.ps1` 打补丁 → vcpkg 装 libusb/pkgconf → `Build-UsbProbe.ps1`、`Build-Radio.ps1`（含两个离线 CTest）→ 上传 exe artifact。

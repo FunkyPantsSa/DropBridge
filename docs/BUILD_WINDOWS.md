@@ -225,12 +225,19 @@ Studio`；CMake 要到 4.2 才认识 `Visual Studio 18 2026` 生成器。因此�
 托盘（in-box csc 本机能编，但工作流暂未加）、Python embed、打包与签名。私有仓库
 下载 artifact 需要登录 GitHub；公开仓库才有匿名下载链接。
 
-> 状态（2026-11-17）：第一次运行在 `usb_probe` configure 失败——runner 已迁到
-> VS 2026，脚本写死的 `-G "Visual Studio 17 2022"` 报 `could not find any instance
-> of Visual Studio`；改成 `vswhere` 探测生成器 + runner 固定 `windows-2022`。
-> 第二次运行过了 usb_probe，`radio` configure 失败：`PkgConfig::libusb` 的 include
-> 目录变成字面量 `/ID:/.../debug/../include/libusb-1.0`——原因是 `--msvc-syntax`。
-> 已改成空 `PKG_CONFIG_ARGN` + release-only `PKG_CONFIG_PATH`。**第三次运行还没跑**；
-> 编过与否以那次的 artifact / 日志为准，跑完后把运行 URL 和产物 SHA-256 补进
-> WORK_QUEUE / WORK_LOG。
+> 状态（2026-11-17 22:45）：**CI 已跑通**。运行记录：
+> 1. 第 1 次：`usb_probe` configure 报 `could not find any instance of Visual Studio`
+>    （runner 迁到 VS 2026，脚本写死 VS 17）→ 改成 `vswhere` 探测 + 固定 `windows-2022`；
+> 2. 第 2 次：`radio` configure 报 `PkgConfig::libusb` 的 `/ID:/...` include 目录
+>    （`--msvc-syntax`）→ 改成空 `PKG_CONFIG_ARGN` + release-only `PKG_CONFIG_PATH`；
+> 3. 第 3 次（`19007a9`）：**全绿**，radio + usb_probe 编译、两个离线 CTest 通过；
+> 4. 第 4 次（`a242ebc`）：构建绿，发布到 release 的步骤红（`gh` 的 stderr 被
+>    PS 5.1 当终止错误）→ 改用 REST API 且发布失败不拖红构建；
+> 5. 第 5 次（`ee1c569`）：**全绿**，产物已发布到 prerelease `ci-latest`。
+>
+> 匿名下载（无需登录，私有仓库不适用）：
+> `https://github.com/FunkyPantsSa/DropBridge/releases/download/ci-latest/airbridge_radio.exe`
+> 同目录还有 `radio_pipe_bridge.exe`、`usb_probe.exe`、两个测试 exe 和 `libusb-1.0.dll`。
+> 真机实测见 `evidence/q71-ci-radio-c811-2026-11-17.log`；它不是产品发布，
+> 不签名、不含 netd/awdld/Python。
 

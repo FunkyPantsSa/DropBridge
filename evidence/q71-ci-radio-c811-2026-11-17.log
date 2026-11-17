@@ -1,0 +1,127 @@
+Q71 — CI 编译出的当前源码 airbridge_radio.exe 在 RTL8811CU 上实测
+时间：2026-11-17 22:38–22:45（Asia/Shanghai）  主机：VOLIN（Windows 11 x64）
+性质：只读探针 + 初始化/固件/149-20/RX 就绪 + 离线单测；**未注入空口帧**。
+
+## 结论
+
+**PASS（关键的一步）**：CI 用当前源码（含 Q71 的 c811/c820 双识别）编出的
+`airbridge_radio.exe`，在**不设 `AIRBRIDGE_PID`** 的情况下自动打开了这台
+单功能 RTL8811CU（`radio: opened RTL8811CU 0bda:c811`），149/20 bring-up
+43.4 s，退出码 0，设备全程 problem code 0。这补上了此前「源码只在 Linux 上改过、
+windows 上没编过」的缺口：**源码能编、能跑、自动识别生效**。
+
+仍未验证：空口 TX、AWDL、iPhone 发现/AirDrop、真实文件传输。
+
+公开的 `ci-latest` 发布版二进制（另一份构建）也复测通过：第一次卡在固件启动
+（已知偶发，重试即可），第二次 41.7 s 就绪。见第 6 节。
+
+## 产物来源
+
+- GitHub Actions `build-radio` 第 3 次运行，commit `19007a9`（含 pkgconf 修复）。
+- 用户下载后放在 `F:\tmp\dropbridge-radio-win-x64\`（artifact 目录结构
+  `radio_usb\Release\`、`usb_probe\Release\`）。
+- 二进制（本地实测 SHA-256）：
+
+      airbridge_radio.exe        601088  8F2F0DF53ACBB20EFAB4C36E16B7F33D0C87ABEF33DB79EE33C859E62D87ACC6
+      radio_pipe_bridge.exe       17408  07A254FC47E2AA1E5DB5228C9292C0D044D09E61AEED988C0829312AD8BA7E24
+      usb_probe.exe               15360  2817FCCF194F4D2B4DA989A5A1AFA05EC6696BC336D9725AE85812BE70E19387
+      peer_telemetry_test.exe     16896  283C933210F8E91EBCACF0855942630BD3E2348E7CB3F3F477BA28F6DA0F7F25
+      channel_completion_test.exe 16896  C395DB1325CA192341BE8297BDD439D1FA576E5C3A79B11B84D1ECAC3C808AD8
+      libusb-1.0.dll             166400  （vcpkg libusb 1.0.30）
+
+## 1. 只读探针（不 Init、不下固件、不发帧）
+
+    build\usb_probe\Release\usb_probe.exe 0bda c811 --read8 00FC
+
+    libusb https://libusb.info
+    target 0bda:c811
+    found 0bda:c811 (RTL8811CU)
+    bus 1 address 12 speed 3
+    descriptor: bcdUSB=0200 class=00 subclass=00 protocol=00 maxPacket0=64
+    open OK
+    interface 0 alt 0: class=ff subclass=ff protocol=ff endpoints=5
+      endpoint 0x84 IN attr=02 maxPacket=512
+      endpoint 0x05 OUT attr=02 maxPacket=512
+      endpoint 0x06 OUT attr=02 maxPacket=512
+      endpoint 0x87 IN attr=03 maxPacket=64
+      endpoint 0x08 OUT attr=02 maxPacket=512
+    claiming candidate interface 0 ...
+    claim OK
+    read8  0x00fc = 0x09
+    releasing interface; no Init, no firmware, no TX
+    exit 0
+
+→ 单功能设备、interface 0、5 个端点；SYS_CFG2 = 0x09 = RTL8821C（8811CU 同硅片）。
+
+## 2. 自动识别 + 149/20 bring-up（不设 AIRBRIDGE_PID）
+
+    F:\tmp\dropbridge-radio-win-x64\radio_usb\Release\airbridge_radio.exe 149 20
+    （只设 AIRBRIDGE_PARENT_PID 指向占位进程，用于干净停止）
+
+关键 stderr：
+
+    devourer [I] radio: opened RTL8811CU 0bda:c811          ← 自动识别生效
+    devourer [I] Creating RtlJaguar2Device C8821C (PID 0xc811, chip-id 0x09)
+    devourer [I] USB device 0bda:c811
+    devourer [I] selected USB interface 0
+    devourer [I] Jaguar2 chip: 8821C cut=4 (UMC) 1T1R (SYS_CFG1=0x00494537)
+    devourer [I] Jaguar2/8821C: channel set ch=149 bw=0 cch=149 BTG (rf18=53d95)
+    devourer [I] Jaguar2: RX enabled (CR=0x06ff, RCR=0xf000032f, IGI=0x40)
+    devourer [I] radio: ready on channel 149 width 20 MHz
+    devourer [I] radio: listening on 127.0.0.1:49876
+
+    ready after 43.4 s（含 USB reset/重枚举）
+    stop: 杀掉占位父进程后退出，进程 exitCode = 0，无残留 radio 进程
+    （异步读取没抓到最后的 shutdown: done 行，以退出码 + 设备状态为准）
+
+## 3. 停止后的设备状态
+
+    tools\Check-Binding.ps1 → exit 0
+      status     : OK  (problem code 0)
+      service    : WinUSB
+    RESULT: the Wi-Fi interface is bound to WinUSB.
+
+另：测试前用户自己起的实例（ch 6）是空闲监听，直接 `Stop-Process -Force` 停止，
+停止后设备仍是 problem code 0、无残留 —— 空闲时强杀没有把卡弄死。
+
+## 4. 离线单测（artifact 内）
+
+    peer_telemetry_test.exe      exit 0  PASS: payload classification, absent PHY report, concurrent window sampling
+    channel_completion_test.exe  exit 0  PASS: C2H bounds/type, pre-wait notification, asynchronous wake, timeout and re-arm
+
+## 5. 用户自己跑的那次（ch 6，2.4 GHz）——观察
+    Jaguar2/8821C: channel set ch=6 bw=0 cch=6 BTG (rf18=03c06)
+    Jaguar2/8821C IQK done (is_btg=1): LOK fail=0 | TXK retry=0 | RXK ... TX/RX fail=0/0
+    Jaguar2: apply_tx_power path 0 ch6 EFUSE base unprogrammed — leaving TXAGC default
+    Jaguar2: RX enabled ...
+    radio: ready on channel 6 width 20 MHz
+
+→ 2.4 GHz 也能 bring-up（is_btg=1）。但 **ch6 的 EFUSE TX 功率基准未编程**，
+devourer 没套用 per-rate TXAGC，只留默认值；AWDL 的 social 信道包含 ch6，
+真上空口时 TX 功率/速率表现要以实测为准，不能按 149 的结果推断。
+
+## 6. 公开下载链接（ci-latest）与发布版二进制
+
+第 5 次 CI 运行（`ee1c569`）全绿，发布步骤把产物传到 prerelease `ci-latest`，
+匿名 URL：
+
+    https://github.com/FunkyPantsSa/DropBridge/releases/download/ci-latest/airbridge_radio.exe
+
+- 匿名下载实测：601088 B，SHA-256 `DC1FACCF43E154D45828B81200D392866C4E93E365DD69DF9CB18FED21FF1873`
+  （与用户手里第 3 次运行的 `8F2F0DF5…` 不同是正常的：同一份源码，MSVC 每次构建的
+  时间戳/调试信息不同）。
+- 发布版二进制单独跑了一次（149/20，不设 `AIRBRIDGE_PID`）：
+  - **第一次**：卡在 `Jaguar2 DLFW: download OK, CPU enabled → polling FW boot`，
+    150 s 内没等到 `FW ready`，被脚本杀掉；停止后设备仍 problem code 0。
+  - **第二次（未拔插）**：41.7 s 就绪，`radio: opened RTL8811CU 0bda:c811`、
+    ch149、RX enabled、`radio: ready`，干净退出、无残留，设备 problem code 0。
+  - 结论：这是已知的「多次 reset 后固件启动偶发不稳」（RADIO_USB.md 已记，重试即可；
+    连续上机测试之间建议拔插一次），不是这次编译引入的回归。
+
+## 局限
+
+- 这次没有客户端连 49876，**没有发过任何空口数据帧**；TX 只到
+  `ready for TX (monitor inject)`。
+- 未跑 AWDL、iPhone 发现、AirDrop、真实文件；这些需要单独授权后做。
+- CI 的 Release 链接（`ci-latest`）与 workflow 状态以 GitHub 为准，本文件只记录
+  本地实测。
