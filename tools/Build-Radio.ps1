@@ -10,6 +10,7 @@ function Find-CMake {
     if ($command) { return $command.Source }
     $candidates = @(
         'D:\VSBuildTools\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe',
+        'C:\Program Files\Microsoft Visual Studio\2022\Enterprise\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe',
         'C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe',
         'C:\Program Files\Microsoft Visual Studio\2022\BuildTools\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe'
     )
@@ -20,8 +21,32 @@ function Find-CMake {
 }
 $cmake = Find-CMake
 $vcpkg = Join-Path $root 'build\deps\vcpkg'
+
+# VS 2022 is still what the docs test against, but CI images move: GitHub's
+# windows-latest no longer ships VS 17, so a hard-coded generator fails with
+# "could not find any instance of Visual Studio". Force 17 only when vswhere
+# actually reports a 17.x install; otherwise let CMake pick the newest VS.
+function Get-GeneratorArgs {
+    $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+    if (Test-Path $vswhere) {
+        $version = & $vswhere -latest -products * `
+            -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+            -property installationVersion 2>$null
+        if ($version -and $version.Trim().StartsWith('17.')) {
+            return @('-G', 'Visual Studio 17 2022')
+        }
+        if ($version) {
+            Write-Host "Visual Studio $($version.Trim()) found; using CMake's default generator"
+        }
+    } else {
+        Write-Warning 'vswhere not found; using CMake default generator'
+    }
+    return @()
+}
+
+$generatorArgs = Get-GeneratorArgs
 & $cmake -S (Join-Path $root 'src\radio_usb') -B (Join-Path $root 'build\radio_usb') `
-    -G 'Visual Studio 17 2022' -A x64 `
+    @generatorArgs -A x64 `
     "-DCMAKE_TOOLCHAIN_FILE=$vcpkg\scripts\buildsystems\vcpkg.cmake" `
     "-DPKG_CONFIG_EXECUTABLE=$vcpkg\installed\x64-windows\tools\pkgconf\pkgconf.exe" `
     '-DPKG_CONFIG_ARGN=--msvc-syntax'

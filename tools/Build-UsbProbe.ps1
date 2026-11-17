@@ -20,6 +20,7 @@ function Find-CMake {
     if ($command) { return $command.Source }
     $candidates = @(
         'D:\VSBuildTools\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe',
+        'C:\Program Files\Microsoft Visual Studio\2022\Enterprise\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe',
         'C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe',
         'C:\Program Files\Microsoft Visual Studio\2022\BuildTools\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe'
     )
@@ -36,6 +37,28 @@ if (-not (Test-Path (Join-Path $installed 'lib\libusb-1.0.lib'))) {
 $cmake = Find-CMake
 $pkgconf = Join-Path $installed 'tools\pkgconf\pkgconf.exe'
 $toolchain = Join-Path $vcpkgRoot 'scripts\buildsystems\vcpkg.cmake'
+
+# VS 2022 is still what the docs test against, but CI images move: GitHub's
+# windows-latest no longer ships VS 17, so a hard-coded generator fails with
+# "could not find any instance of Visual Studio". Force 17 only when vswhere
+# actually reports a 17.x install; otherwise let CMake pick the newest VS.
+function Get-GeneratorArgs {
+    $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+    if (Test-Path $vswhere) {
+        $version = & $vswhere -latest -products * `
+            -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+            -property installationVersion 2>$null
+        if ($version -and $version.Trim().StartsWith('17.')) {
+            return @('-G', 'Visual Studio 17 2022')
+        }
+        if ($version) {
+            Write-Host "Visual Studio $($version.Trim()) found; using CMake's default generator"
+        }
+    } else {
+        Write-Warning 'vswhere not found; using CMake default generator'
+    }
+    return @()
+}
 
 $env:VCPKG_ROOT = $vcpkgRoot
 $env:PKG_CONFIG_PATH = Join-Path $installed 'lib\pkgconfig'
@@ -54,10 +77,8 @@ function Invoke-Native {
     return $code
 }
 
-$configure = @(
-    '-S', $source,
-    '-B', $build,
-    '-G', 'Visual Studio 17 2022', '-A', 'x64',
+$configure = @('-S', $source, '-B', $build) + (Get-GeneratorArgs) + @(
+    '-A', 'x64',
     "-DCMAKE_TOOLCHAIN_FILE=$toolchain",
     '-DVCPKG_TARGET_TRIPLET=x64-windows',
     "-DPKG_CONFIG_EXECUTABLE=$pkgconf"

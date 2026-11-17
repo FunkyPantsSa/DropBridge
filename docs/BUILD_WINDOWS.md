@@ -178,8 +178,19 @@ radio 输出 `radio: opened RTL8811CU 0bda:c811`，随后 `ready on channel 149`
 
 本机如果只装了 .NET 的 in-box `csc`（能编托盘）但没有 MSVC/CMake/Windows SDK，
 `airbridge_radio.exe` 编不出来。`.github/workflows/build-radio.yml` 把上面第 8 节
-的 radio-only 路径搬到 GitHub 的 `windows-latest` 上跑，产物作为 artifact 下载，
-不碰硬件、不签名、不打发布包。
+的 radio-only 路径搬到 GitHub 上跑，产物作为 artifact 下载，不碰硬件、不签名、
+不打发布包。
+
+runner 固定为 **`windows-2022`**（自带 VS 2022）。原因：2026 年起
+`windows-latest` 迁到 windows-2025 + Visual Studio 2026，而写死
+`-G "Visual Studio 17 2022"` 会直接报 `could not find any instance of Visual
+Studio`；CMake 要到 4.2 才认识 `Visual Studio 18 2026` 生成器。因此：
+
+- `tools/Build-Radio.ps1`、`tools/Build-UsbProbe.ps1` 不再写死生成器：用
+  `vswhere` 探测到 VS 17.x 才显式指定，否则交给 CMake 选默认（最新）VS；
+- 工作流自己固定 `windows-2022`，保持与文档、脚本验证过的 VS 2022 一致；
+- 将来 `windows-2022` 退役时，把 `runs-on` 改回 `windows-latest` 即可，前提是
+  镜像里的 CMake ≥ 4.2。
 
 触发方式：Actions 页面手动 `Run workflow`，或 push 到 `main` 且改动命中
 `src/radio_usb/**`、`tools/usb_probe/**`、`tools/Build-*.ps1`、`tools/Prepare-Devourer.ps1`、
@@ -205,6 +216,10 @@ radio 输出 `radio: opened RTL8811CU 0bda:c811`，随后 `ready on channel 149`
 托盘（in-box csc 本机能编，但工作流暂未加）、Python embed、打包与签名。私有仓库
 下载 artifact 需要登录 GitHub；公开仓库才有匿名下载链接。
 
-> 状态（2026-11-17）：工作流文件已写入仓库但**尚未 push，因此从未在 GitHub 上
-> 运行过**；第一次跑完后要把运行 URL 和产物 SHA-256 补进 WORK_QUEUE / WORK_LOG。
+> 状态（2026-11-17）：第一次运行在 `usb_probe` configure 阶段失败——当时 runner 还是
+> `windows-latest`，镜像已迁到 VS 2026，脚本里写死的 `-G "Visual Studio 17 2022"`
+> 报 `could not find any instance of Visual Studio`。已改成「`vswhere` 探测生成器 +
+> runner 固定 `windows-2022`」，并加了失败时上传 CMake 配置日志的步骤；**第二次
+> 运行还没跑**，编过与否要以那次的 artifact / 日志为准，跑完后把运行 URL 和产物
+> SHA-256 补进 WORK_QUEUE / WORK_LOG。
 

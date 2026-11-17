@@ -1,7 +1,7 @@
-# Build the Windows radio backend on GitHub's windows-latest runner.
+# Build the Windows radio backend on GitHub Actions.
 #
 # Why this exists: the local test machine has no MSVC/CMake/Windows SDK, so
-# `airbridge_radio.exe` can only be compiled on a machine with the VS 2022 C++
+# `airbridge_radio.exe` can only be compiled on a machine with the VS C++
 # workload. This workflow reproduces the documented radio-only path
 # (docs/BUILD_WINDOWS.md §8): pinned devourer checkout -> vcpkg libusb+pkgconf
 # -> Build-UsbProbe.ps1 -> Build-Radio.ps1 (which also runs the two offline
@@ -47,18 +47,41 @@ concurrency:
 jobs:
   radio:
     name: radio + usb_probe (MSVC x64, pinned devourer)
-    runs-on: windows-latest
+    # windows-latest moved to windows-2025 + Visual Studio 2026, where a pinned
+    # "Visual Studio 17 2022" generator fails with "could not find any instance
+    # of Visual Studio" (CMake only learned the VS 18 2026 generator in 4.2).
+    # windows-2022 still ships VS 2022, which is what the project targets.
+    # The build scripts no longer hard-code the generator, so switching this to
+    # windows-latest later only needs a CMake >= 4.2 on the image.
+    runs-on: windows-2022
     timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Toolchain
+      # The scripts pick the generator from vswhere: VS 17 is used when it is
+      # installed, otherwise CMake's default (newest VS). Print both so a future
+      # image change is visible in the log instead of a bare CMake error.
+      - name: Toolchain and Visual Studio
         shell: powershell
         run: |
           cmake --version | Select-Object -First 1
           git --version
           Write-Host "runner: $env:RUNNER_OS $env:RUNNER_IMAGE"
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          if (Test-Path $vswhere) {
+            Write-Host '--- Visual Studio installations (>= VS 17 with C++) ---'
+            & $vswhere -all -products * `
+              -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+              -property installationPath
+            & $vswhere -all -products * `
+              -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+              -property installationVersion
+          } else {
+            Write-Host 'vswhere not found'
+          }
+          Write-Host '--- CMake Visual Studio generators ---'
+          cmake --help | Select-String 'Visual Studio \d+ \d+' | ForEach-Object { $_.Line.Trim() }
 
       # upstream/ is git-ignored, so the runner has to restore the locked
       # devourer commit itself. Fetching that exact SHA works on GitHub even
@@ -93,6 +116,20 @@ jobs:
       - name: Build radio + offline CTest regressions
         shell: powershell
         run: powershell -NoProfile -ExecutionPolicy Bypass -File tools\Build-Radio.ps1
+
+      # A failed configure says little on the console; CMake's own detection
+      # log is the thing that names the missing compiler/SDK.
+      - name: Upload build logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          if-no-files-found: ignore
+          retention-days: 7
+          path: |
+            evidence/usb-probe-configure.log
+            evidence/usb-probe-build.log
+            build/radio_usb/CMakeFiles/CMakeConfigureLog.yaml
 
       - name: Hashes
         shell: powershell

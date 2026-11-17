@@ -1,5 +1,14 @@
 # 工作记录 / 下一位 Agent 交接
 
+## 2026-11-17 晚：GitHub Actions 编 radio（第一次运行失败 → 修生成器）
+
+- 本机无 MSVC/CMake/Windows SDK（只有 in-box csc，能编托盘），radio 编不出来；新增 `.github/workflows/build-radio.yml`，在 CI 上复现 `docs/BUILD_WINDOWS.md` §8 的 radio-only 路径：按 `sources.lock.json` 只 fetch devourer 的锁定 SHA → `Prepare-Devourer.ps1` 打补丁 → vcpkg 装 libusb/pkgconf → `Build-UsbProbe.ps1`、`Build-Radio.ps1`（含两个离线 CTest）→ 上传 exe artifact。
+- 本地先验证过：YAML 可解析、6 个 PowerShell 步骤语法通过、空目录沙箱里「fetch 指定 SHA + `Prepare-Devourer.ps1` 打补丁」成功（9 个文件改动）。
+- **第一次 CI 运行失败**：`usb_probe` configure 报 `could not find any instance of Visual Studio`。根因是 `windows-latest` 已迁到 windows-2025 + VS 2026，而 `Build-Radio.ps1`/`Build-UsbProbe.ps1` 写死 `-G "Visual Studio 17 2022"`；CMake 要到 4.2 才认识 `Visual Studio 18 2026` 生成器（社区同类修复：Sokol.NET b13dffb、rakupp bb95496、scikit-build-core #1326）。
+- 修法：① 两个脚本不再写死生成器，用 `vswhere` 探测到 VS 17.x 才显式 `-G "Visual Studio 17 2022"`，否则交给 CMake 选默认（最新）VS；补上 VS 2022 Enterprise 的 cmake 候选路径。② 工作流 `runs-on` 固定 `windows-2022`（有 VS 2022，和文档/脚本验证过的一致）；注释说明将来换回 `windows-latest` 需要镜像 CMake ≥ 4.2。③ 加「Toolchain and Visual Studio」诊断步骤（vswhere 安装列表 + CMake 支持的 VS 生成器），失败时上传 `evidence/usb-probe-*.log` 与 `CMakeConfigureLog.yaml`。
+- **未验证**：第二次 CI 运行还没跑（等 push）。真正悬念是 Q71 的 c811 双识别源码从未在 Windows 编译过，可能还有编译/链接错误。
+- 边界：工作流不碰硬件、不签名、不打包；artifact 含 `airbridge_radio.exe`、`radio_pipe_bridge.exe`、两个测试 exe、`usb_probe.exe`、`libusb-1.0.dll`。
+
 ## 2026-11-17 晚：8811CU 绑定复核 + 旧 radio 二进制真机冒烟（Q71）
 
 - **绑定复核**：会话开始时 `tools\Check-Binding.ps1` 已显示 `RTL8811CU Wi-Fi (whole device)`、service `WinUSB`、`oem43.inf`/libwdi 6.1.7600.16385、problem code 0 —— 即 Zadig 绑定在本次会话之前就已完成，不是本会话执行的。设备无 `&MI_`（单功能），蓝牙是独立的 `USB\VID_0BDA&PID_8771`。证据 `evidence/q71-binding-c811-2026-11-17.log`。
