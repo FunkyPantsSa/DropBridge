@@ -1,0 +1,31 @@
+Q71 first Windows check — 2026-11-17 (Asia/Shanghai)
+Source: user-pasted PowerShell transcript, not a full machine log.
+Host: E:\Project\DropBridge, HEAD 0fb069f.
+
+PASS: Build-Supervisor.ps1 -Test
+  - supervisor: build\supervisor\Release\DropBridge.exe (118 KB)
+  - PASS: fixed child environment, inherited follow removed, only join argument changed
+  - PASS: social child environment, inherited follow removed, only join argument changed
+  - PASS: invalid mode rejected; no radio process started
+  - tray icons: 16x16 light/dark OK; physical tray size 16 px
+  - PASS settings
+  => the c811/c820 supervisor source compiles on Windows and its tests pass.
+
+Check-Binding.ps1 (card not yet bound):
+  Target Wi-Fi interface: RTL8811CU Wi-Fi (whole device)
+  instance   : USB\VID_0BDA&PID_C811\<serial redacted>
+  status     : OK (problem code 0)
+  driver     : Realtek Semiconductor Corp. 1030.52.1216.2025
+  service    : RtlWlanu
+  Bluetooth: not applicable
+  RESULT: still bound to a non-WinUSB driver.
+  => confirms this 8811CU is a single-function device (no &MI_); the new
+     Check-Binding c811 branch works. Binding is still pending.
+
+Blocked build steps:
+  - Build-UsbProbe.ps1: build/deps missing (Setup-BuildDeps.ps1 not run here)
+  - Build-Radio.ps1: upstream/devourer missing (Prepare-Devourer.ps1 cannot clone)
+  - usb_probe / airbridge_radio were therefore not built; no hardware test yet.
+
+Not yet done: Zadig binding, deps restore, devourer checkout, radio build,
+Init/RX/TX, full chain, AirDrop.
