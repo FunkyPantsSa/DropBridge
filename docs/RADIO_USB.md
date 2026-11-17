@@ -1,6 +1,6 @@
 # USB radio 后端（`src/radio_usb`）状态
 
-状态：**TCP 传输、硬件 RX、2.4 GHz TX 已打通；Phase 2 的核心链路可用，换信道/地址/ACK 与 Dart 客户端未测。** 2026-11-17 起源码同时支持 RTL8811CU / RTL8821CU，但 8811CU 的 Windows 编译与真机验证尚未做（Q71）。
+状态：**TCP 传输、硬件 RX、2.4 GHz TX 已打通；Phase 2 的核心链路可用，换信道/地址/ACK 与 Dart 客户端未测。** 2026-11-17 起，源码同时支持 RTL8811CU / RTL8821CU，但 8811CU 的 Windows 编译与真机验证尚未做（Q71）。
 
 ## 8811CU 支持（源码，未真机）
 
