@@ -173,3 +173,38 @@ radio 输出 `radio: opened RTL8811CU 0bda:c811`，随后 `ready on channel 149`
 
 这一步通过后再补 winawdl/owl/lwIP/Python，跑完整 AirDrop 链路；不要用 radio-only
 的结果替代 iPhone 实际传输。
+
+## 9. 用 GitHub Actions 编译（没有本机 MSVC 时的替代）
+
+本机如果只装了 .NET 的 in-box `csc`（能编托盘）但没有 MSVC/CMake/Windows SDK，
+`airbridge_radio.exe` 编不出来。`.github/workflows/build-radio.yml` 把上面第 8 节
+的 radio-only 路径搬到 GitHub 的 `windows-latest` 上跑，产物作为 artifact 下载，
+不碰硬件、不签名、不打发布包。
+
+触发方式：Actions 页面手动 `Run workflow`，或 push 到 `main` 且改动命中
+`src/radio_usb/**`、`tools/usb_probe/**`、`tools/Build-*.ps1`、`tools/Prepare-Devourer.ps1`、
+`tools/Setup-BuildDeps.ps1`、`patches/devourer-airbridge.patch`、`docs/sources.lock.json`
+之一；PR 同理。
+
+做的事：
+
+1. checkout 本仓库；runner 里 `upstream/` 是空的 → 按 `docs/sources.lock.json`
+   的 commit 只取 devourer 那一个提交（`git fetch --depth 1 <sha>` + 一个
+   `pinned` 引用），再交给 `tools/Prepare-Devourer.ps1` 打 `patches/devourer-airbridge.patch`；
+2. `tools/Setup-BuildDeps.ps1`：vcpkg + `libusb:x64-windows` + `pkgconf:x64-windows`；
+3. `tools/Build-UsbProbe.ps1`、`tools/Build-Radio.ps1`（后者自带两个离线 CTest
+   `peer_telemetry`、`channel_completion`）；
+4. 打印每个 exe 的 SHA-256，上传 artifact `dropbridge-radio-win-x64`（含
+   `airbridge_radio.exe`、`radio_pipe_bridge.exe`、两个测试 exe、`usb_probe.exe`
+   和 `libusb-1.0.dll`），保留 14 天。
+
+拿到 artifact 后，在已绑定 WinUSB 的机器上按第 8 节的命令行直接跑；注意 CI 产物
+没有随包 DLL 之外的运行库，`libusb-1.0.dll` 必须和 exe 放在同一目录。
+
+还**没有**覆盖：netd（要 lwIP + lwIP-contrib）、awdld（要 MinGW 和 winawdl/owl）、
+托盘（in-box csc 本机能编，但工作流暂未加）、Python embed、打包与签名。私有仓库
+下载 artifact 需要登录 GitHub；公开仓库才有匿名下载链接。
+
+> 状态（2026-11-17）：工作流文件已写入仓库但**尚未 push，因此从未在 GitHub 上
+> 运行过**；第一次跑完后要把运行 URL 和产物 SHA-256 补进 WORK_QUEUE / WORK_LOG。
+

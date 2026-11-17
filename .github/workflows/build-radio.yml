@@ -1,0 +1,118 @@
+# Build the Windows radio backend on GitHub's windows-latest runner.
+#
+# Why this exists: the local test machine has no MSVC/CMake/Windows SDK, so
+# `airbridge_radio.exe` can only be compiled on a machine with the VS 2022 C++
+# workload. This workflow reproduces the documented radio-only path
+# (docs/BUILD_WINDOWS.md §8): pinned devourer checkout -> vcpkg libusb+pkgconf
+# -> Build-UsbProbe.ps1 -> Build-Radio.ps1 (which also runs the two offline
+# CTest regressions).
+#
+# It does NOT touch hardware, does not sign anything and does not package a
+# release; it only produces the exes to download as an artifact.
+name: build-radio
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'src/radio_usb/**'
+      - 'tools/usb_probe/**'
+      - 'tools/Build-Radio.ps1'
+      - 'tools/Build-UsbProbe.ps1'
+      - 'tools/Prepare-Devourer.ps1'
+      - 'tools/Setup-BuildDeps.ps1'
+      - 'patches/devourer-airbridge.patch'
+      - 'docs/sources.lock.json'
+      - '.github/workflows/build-radio.yml'
+  pull_request:
+    paths:
+      - 'src/radio_usb/**'
+      - 'tools/usb_probe/**'
+      - 'tools/Build-Radio.ps1'
+      - 'tools/Build-UsbProbe.ps1'
+      - 'tools/Prepare-Devourer.ps1'
+      - 'tools/Setup-BuildDeps.ps1'
+      - 'patches/devourer-airbridge.patch'
+      - 'docs/sources.lock.json'
+      - '.github/workflows/build-radio.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-radio-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  radio:
+    name: radio + usb_probe (MSVC x64, pinned devourer)
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Toolchain
+        shell: powershell
+        run: |
+          cmake --version | Select-Object -First 1
+          git --version
+          Write-Host "runner: $env:RUNNER_OS $env:RUNNER_IMAGE"
+
+      # upstream/ is git-ignored, so the runner has to restore the locked
+      # devourer commit itself. Fetching that exact SHA works on GitHub even
+      # though it is not a branch tip; Prepare-Devourer.ps1 then makes the
+      # patched build copy under build/devourer-airbridge.
+      - name: Restore pinned devourer
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $lock = Get-Content docs\sources.lock.json -Raw | ConvertFrom-Json
+          $dep = $lock | Where-Object { $_.name -eq 'devourer' }
+          if (-not $dep) { throw 'devourer entry missing from docs/sources.lock.json' }
+          Write-Host "devourer: $($dep.url) @ $($dep.commit)"
+          New-Item -ItemType Directory -Force upstream | Out-Null
+          git init -q upstream\devourer
+          git -C upstream\devourer remote add origin $dep.url
+          git -C upstream\devourer -c core.autocrlf=false fetch --depth 1 origin $dep.commit
+          if ($LASTEXITCODE -ne 0) { throw "git fetch $($dep.commit) failed" }
+          git -C upstream\devourer update-ref refs/heads/pinned FETCH_HEAD
+          $head = (git -C upstream\devourer rev-parse refs/heads/pinned).Trim()
+          if ($head -ne $dep.commit) { throw "unexpected devourer head: $head" }
+          Write-Host "devourer pinned at $head"
+
+      - name: Install build dependencies (vcpkg libusb + pkgconf)
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File tools\Setup-BuildDeps.ps1
+
+      - name: Build usb_probe (read-only probe)
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File tools\Build-UsbProbe.ps1
+
+      - name: Build radio + offline CTest regressions
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File tools\Build-Radio.ps1
+
+      - name: Hashes
+        shell: powershell
+        run: |
+          Get-ChildItem build\radio_usb\Release\*.exe, build\usb_probe\Release\*.exe -ErrorAction SilentlyContinue |
+            ForEach-Object {
+              $hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash
+              Write-Host ('{0}  {1,9}  {2}' -f $hash, $_.Length, $_.Name)
+            }
+
+      - name: Upload binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: dropbridge-radio-win-x64
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            build/radio_usb/Release/airbridge_radio.exe
+            build/radio_usb/Release/radio_pipe_bridge.exe
+            build/radio_usb/Release/peer_telemetry_test.exe
+            build/radio_usb/Release/channel_completion_test.exe
+            build/usb_probe/Release/usb_probe.exe
+            build/usb_probe/Release/libusb-1.0.dll
