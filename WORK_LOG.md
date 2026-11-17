@@ -1,5 +1,15 @@
 # 工作记录 / 下一位 Agent 交接
 
+## 2026-11-17 晚：8811CU 绑定复核 + 旧 radio 二进制真机冒烟（Q71）
+
+- **绑定复核**：会话开始时 `tools\Check-Binding.ps1` 已显示 `RTL8811CU Wi-Fi (whole device)`、service `WinUSB`、`oem43.inf`/libwdi 6.1.7600.16385、problem code 0 —— 即 Zadig 绑定在本次会话之前就已完成，不是本会话执行的。设备无 `&MI_`（单功能），蓝牙是独立的 `USB\VID_0BDA&PID_8771`。证据 `evidence/q71-binding-c811-2026-11-17.log`。
+- **冒烟对象**：`F:\tmp\DropBridge\backend\airbridge_radio.exe`（sha256 `3805EC83…641B9F`，包 git `68519f5`、built 2026-11-10，即 c811 双识别之前的构建）。
+- **负对照**：不设 `AIRBRIDGE_PID` → `devourer [E] radio: no device 0bda:c820 (is MI_02 on WinUSB?)`，0.1 s 退出；证明旧构建只认 c820。
+- **正测（3 次）**：`AIRBRIDGE_PID=0xc811`、`149 20`。三次都读到 `Creating RtlJaguar2Device C8821C (PID 0xc811, chip-id 0x09)`、`selected USB interface 0`、`Jaguar2 chip: 8821C cut=4 (UMC) 1T1R`、`EFUSE rfe_type=0x22`、固件启动、BB/AGC/RF 表、IQK、`channel set ch=149`、`RX enabled`、`radio: ready on channel 149 width 20 MHz`、监听 49876。首次完成但未计时（当时误轮询 stdout，日志实际走 stderr），第 2、3 次不拔插 42.2 / 43.3 s；三次都走同一条 claim → USB 复位 → reopen 路径。停止用 `AIRBRIDGE_PARENT_PID` 指向占位进程再杀掉（supervisor 崩溃路径），抓到完整 `shutdown: done`；run3 用 .NET Process 取到退出码 0；每次停止后 `Check-Binding` 仍为 problem code 0、无残留进程。
+- **结论**：8811CU 的板级 bring-up（固件/射频/149-20/RX）在现有二进制上就通，卡不需要新代码才能初始化；新源码的 c811 自动识别只是省掉环境变量。
+- **未验证**：本次没有客户端连 49876，**没有发过空口数据帧**；TX 注入、AWDL、iPhone 发现/AirDrop、真实文件都没有在 8811CU 上跑。当前源码 radio/netd 仍未编译（`build/deps`、`upstream/devourer` 缺失）。旧包 `DropBridge.exe` 与旧 `Start-Chain.ps1` 都没有 c811 识别，整链要么先设 `AIRBRIDGE_PID` 走旧 Start-Chain，要么按 BUILD_WINDOWS.md 编当前源码。
+- 证据：`evidence/q71-old-radio-c811-2026-11-17.log`；WORK_QUEUE Q71 已更新为「部分完成」。
+
 ## 2026-11-17：Q71 源码实现 c811 / c820 双识别
 
 - 背景：用户要把 Wi-Fi 从 RTL8821CU 换成 RTL8811CU，蓝牙保持独立；仓库已推到 fork `FunkyPantsSa/DropBridge`，用户在 Windows 上测试并反馈。

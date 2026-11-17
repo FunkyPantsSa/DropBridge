@@ -1,0 +1,50 @@
+2026-11-17 22:03–22:10 (Asia/Shanghai)  主机 VOLIN（Windows 11 x64）
+只读复核：RTL8811CU 整设备已绑 WinUSB（Zadig/libwdi）
+
+说明：本次会话第一次运行时（22:03）设备**已经是** WinUSB，绑定不是本会话执行的；
+下面的记录是该状态的复核证据，以及它能让 libusb 真正打开并初始化的证明
+（后者见 evidence/q71-old-radio-c811-2026-11-17.log）。
+
+=== tools/Check-Binding.ps1 ===
+Target Wi-Fi interface: RTL8811CU Wi-Fi (whole device)
+  instance   : USB\VID_0BDA&PID_C811\123456
+  status     : OK  (problem code 0)
+  driver inf : oem43.inf
+  driver     : libwdi 6.1.7600.16385
+  service    : WinUSB
+
+Bluetooth: not applicable (RTL8811CU has no Bluetooth;
+           the AirDrop beacon uses the PC's own BLE adapter)
+
+No Realtek 8811CU/8821CU network adapter (expected once WinUSB owns the Wi-Fi interface).
+
+RESULT: the Wi-Fi interface is bound to WinUSB. libusb should be able to claim it.
+exit code  : 0
+
+=== Win32_PnPSignedDriver ===
+DeviceName         : 802.11ac NIC
+DriverProviderName : libwdi
+DriverVersion      : 6.1.7600.16385
+InfName            : oem43.inf
+IsSigned           : False            （Zadig 自签驱动包；设备正常工作）
+
+=== 枚举特征 ===
+HardwareIds  : USB\VID_0BDA&PID_C811&REV_0200, USB\VID_0BDA&PID_C811
+CompatibleIds: USB\COMPAT_VID_0BDA&Class_FF&SubClass_FF&Prot_FF, ...
+Class        : USBDevice（不再是 Net）
+蓝牙         : 无（c811 是单功能设备；本机蓝牙是独立的 USB\VID_0BDA&PID_8771）
+网络适配器   : 列表里已无 8811CU/8821CU 的 WLAN 适配器，有线网卡/Tailscale 正常
+
+=== libusb 打开的实测证据（同一会话，见另一份日志）===
+old airbridge_radio.exe（0bda:c811 需 AIRBRIDGE_PID=0xc811 覆盖）：
+  devourer [I] Creating RtlJaguar2Device C8821C (PID 0xc811, chip-id 0x09)
+  devourer [I] USB device 0bda:c811
+  devourer [I] selected USB interface 0        ← 单功能，interface 0，无 &MI_
+  devourer [I] Jaguar2 chip: 8821C cut=4 (UMC) 1T1R (SYS_CFG1=0x00494537)
+  devourer [I] radio: ready on channel 149 width 20 MHz
+  devourer [W] shutdown: done                  ← 干净收尾，设备仍为 problem code 0
+
+=== 回滚办法（与 docs/BINDING_RUNBOOK.md 第 5 节一致）===
+设备管理器 → 该设备（“通用串行总线设备”下的 802.11ac NIC）→ 卸载设备（不勾选删除驱动）
+→ 扫描检测硬件改动；Windows 会重新装回 netrtwlanu.inf，WLAN 适配器恢复。
+不需要删驱动包、不改注册表、不动 Secure Boot。

@@ -1,0 +1,153 @@
+Q71 — 旧构建 airbridge_radio.exe 在 RTL8811CU（0bda:c811）上的冒烟测试
+时间：2026-11-17 22:04–22:13（Asia/Shanghai）  主机：VOLIN（Windows 11 x64）
+性质：只做初始化 / 固件 / 信道 149 / RX 就绪，不注入 TX 帧、不跑 AWDL、不联手机。
+
+## 结论
+
+**PASS（有条件）**：改动前的旧 radio 二进制本身能在这张单功能 8811CU 上完整
+bring-up —— 读到 chip-id 0x09、认成 C8821C、下载固件、应用 BB/AGC/RF 表、
+IQK 通过、切到 149/20、RX 打开、监听 49876 —— 但在旧构建下**必须**显式设
+`AIRBRIDGE_PID=0xc811`，因为它出厂默认只找 `0bda:c820`。连续 3 次初始化
+（其中第 2、3 次没有再拔插）都成功，干净停止后设备仍是 problem code 0。
+
+这消掉了 CHIP_SWITCH_8811CU.md 第 6 节第 0 步的风险：不是“只有新编译的 radio
+才行”，板子/固件/射频初始化这条路径本身在 8811CU 上就通。新源码的自动识别
+（先 c811 再 c820）等价于这里的手工覆盖。
+
+## 被测二进制
+
+    F:\tmp\DropBridge\backend\airbridge_radio.exe
+    sha256 3805EC83369EFDCFADBDC1A2680CDA41EFAECFF76B0FA0AE522EBE27A7641B9F
+    包内 VERSION.txt：built 2026-11-10 17:28:45 +08:00, git 68519f5
+    （即 c811 双识别源码提交之前的那一版）
+
+设备状态（同一时刻，见 evidence/q71-binding-c811-2026-11-17.log）：
+    USB\VID_0BDA&PID_C811\123456，单功能（无 &MI_），service WinUSB，
+    oem43.inf / libwdi 6.1.7600.16385，problem code 0。
+
+## A. 负对照：不设 AIRBRIDGE_PID
+
+    $env:AIRBRIDGE_PID = $null
+    F:\tmp\DropBridge\backend\airbridge_radio.exe 149 20
+
+    stderr: devourer [E] radio: no device 0bda:c820 (is MI_02 on WinUSB?)
+    进程 0.1 s 内退出（PS 5.1 的 Start-Process 加重定向取不到 ExitCode，
+    故这一项只以 stderr 为准，不引用退出码）
+
+→ 旧构建确实只认 c820，不覆盖 PID 时不会去碰 c811。这条也证明“能跑起来”
+不是误连到别的设备。
+
+## B. 正式测试 1（run 1）：AIRBRIDGE_PID=0xc811，149/20
+
+    $env:AIRBRIDGE_PID='0xc811'
+    F:\tmp\DropBridge\backend\airbridge_radio.exe 149 20
+
+关键 stderr（完整文件在 build\_evidence\old-radio-c811.err.txt，98 行，
+其中约 40 行是 `bulk_send EP 5 OK ...` 的固件分块，已折叠）：
+
+    devourer [I] USB adapter 1-10 locked for exclusive access
+    devourer [I] Creating RtlJaguar2Device C8821C (PID 0xc811, chip-id 0x09)
+    devourer [I] USB device 0bda:c811
+    devourer [I] Running USB bus at 480MBit/s
+    devourer [I] selected USB interface 0
+    devourer [I] endpoint[0]: addr=0x84 attrs=0x2 bulk=1 in=1
+    devourer [I] selected bulk IN endpoint: 0x84
+    devourer [I] bulk OUT endpoints: 0x05 0x06 0x08
+    devourer [I] Boot from EFUSE, Autoload OK !
+    devourer [I] radio: channel 149 width 20 MHz offset 0
+    devourer [I] Jaguar2: power-on sequence complete (card active)
+    devourer [I] Jaguar2 chip: 8821C cut=4 (UMC) 1T1R (SYS_CFG1=0x00494537)
+    devourer [I] RtlJaguar2Device: firmware booted (bw=0)
+    devourer [I] Jaguar2: priority_queue_cfg done (rsvd_boundary=452)
+    devourer [I] Jaguar2: init_usb_cfg (RXDMA_MODE=0x1e, RX-agg EN)
+    devourer [I] Jaguar2: EFUSE rfe_type=0x22
+    devourer [I] Jaguar2: FW general/phydm info H2C sent (rfe=34 rf=1T1R cut=4 ...)
+    devourer [I] Jaguar2: applying BB phy_reg (3356 words) + agc_tab (3200 words)
+    devourer [I] Jaguar2: applying RF radioa (5424 words) + radiob (0 words)
+    devourer [I] Jaguar2: BB/AGC/RF tables applied (rfe_type=0x22)
+    devourer [I] Jaguar2/8821C: channel set ch=149 bw=0 cch=149 BTG (rf18=53d95)
+    devourer [I] Jaguar2/8821C: IQK done (is_btg=0): LOK fail=0 | TXK retry=0 |
+                 RXK gs_retry(g1=0 g2=4) ... TX/RX fail=0/0
+    devourer [I] Jaguar2/8821C: per-rate TXAGC ... ch149 5G cck_base=0 ofdm_base=39
+                 ht_base=37 lmt cck/ofdm/ht=63/-63/-63
+    devourer [I] Jaguar2/8821C: coex WL-only antenna (rfe_mod=2 wlg@btg=1 main=1
+                 inv=0 is_5g=1)
+    devourer [I] Jaguar2: RX enabled (CR=0x06ff, RCR=0xf000032f, IGI=0x40)
+    devourer [I] Jaguar2 8821C thermal-track: baseline=28 ch=149 default_ofdm=24
+    devourer [I] Jaguar2: ready for TX (monitor inject, ch=149)
+    devourer [I] radio: ready on channel 149 width 20 MHz
+    devourer [I] radio: tx retry limit 7
+    devourer [I] radio: tx mode 1M
+    radio: listening on 127.0.0.1:49876
+    devourer [W] shutdown: accept failed; stopping rx loop
+    devourer [W] shutdown: rx loop stopped; no worker in this iteration
+    devourer [W] shutdown: stopping stats thread
+    devourer [W] shutdown: joining writer
+    devourer [W] shutdown: stopping the device
+    devourer [W] shutdown: device stopped; releasing radio
+    devourer [W] shutdown: releasing the USB interface
+    devourer [W] shutdown: done
+
+停止方式：启动时设 `AIRBRIDGE_PARENT_PID` 指向一个占位进程，杀占位进程 ——
+即 radio 专门为“supervisor 崩了”写的收尾路径（不是 TerminateProcess）。
+
+## C. 正式测试 2（run 2）：不拔插，再初始化一次
+
+    同一二进制、同一参数，仅重新起进程；检测 stderr 的 `radio: listening on`
+    作为就绪信号。
+
+    run2 ready: True after 42.2 s
+    关键行同上（Creating RtlJaguar2Device C8821C (PID 0xc811, chip-id 0x09)、
+    USB device 0bda:c811、selected USB interface 0、power-on sequence complete、
+    Jaguar2 chip: 8821C cut=4 ...、channel set ch=149、RX enabled、
+    radio: listening on 127.0.0.1:49876）
+    run2 stop : exited=True cleanShutdownLine=True（含 `shutdown: done`）
+    run2 post-check exit=0：status OK（problem 0）、service WinUSB
+    run2 leftover radio processes: 0
+
+→ 上一次干净停止没有把卡弄死，第二次 init 照样成功且只需 42.2 s。
+   run 1 的就绪时刻没测到（当时误轮询 stdout，radio/devourer 的日志都走 stderr），
+   只知道它在 300 s 轮询窗口内已经就绪；三次 run 都走同一条
+   claim → USB reset → reopen 路径，所以“首次更慢”没有实测依据，不写。
+
+## D. 正式测试 3（run 3）：取真实退出码
+
+    用 .NET Process（PS 5.1 下 Start-Process + 重定向取不到 ExitCode）：
+    run3 ready: True after 43.3 s
+    run3 exit: exitCode=0 totalRuntime=46.5 s
+    run3 post-check exit=0：status OK（problem 0）、service WinUSB
+    run3 leftover radio processes: 0
+
+    （run 3 的异步 stderr 读取在 WaitForExit 返回后没有再把最后几行刷出来，
+     所以没抓到 `shutdown: done`；退出码 0 + 设备健康 + 无残留进程为准，
+     run 1/2 已经两次抓到完整的 shutdown 序列。）
+
+## 复现
+
+    # 需要先按 docs/BINDING_RUNBOOK.md 把 0bda:c811 整台设备绑到 WinUSB
+    $env:AIRBRIDGE_PID='0xc811'            # 旧构建必需；新源码不用
+    $env:AIRBRIDGE_PARENT_PID='<pid>'      # 可选，用于干净停止
+    F:\tmp\DropBridge\backend\airbridge_radio.exe 149 20
+    # 就绪标志：stderr 出现 radio: ready on channel 149 width 20 MHz /
+    #           radio: listening on 127.0.0.1:49876
+    # 停止：杀掉 AIRBRIDGE_PARENT_PID 指向的进程，等 stderr 出现 shutdown: done
+
+## 局限（这次没有验证的）
+
+- 没有客户端连 49876，因此**没有发过任何空口数据帧**；TX 路径只到
+  “ready for TX (monitor inject, ch=149)”。真实 TX/RX、AWDL、AirDrop、文件传输
+  都还没在 8811CU 上跑。
+- 旧包托盘 `DropBridge.exe`（git 68519f5）没有 c811 识别，不能用它启动这张卡；
+  旧 `tools\Start-Chain.ps1` 也不主动传 `AIRBRIDGE_PID`（继承父进程环境，
+  需要自己先设）。要跑整链要么用旧 Start-Chain + 环境变量，要么先按
+  docs/BUILD_WINDOWS.md 编出当前源码。
+- `build/deps`、`upstream/devourer` 仍未恢复，所以本次没有、也无法编译当前源码
+  的 radio；这次结论只覆盖“旧二进制 + PID 覆盖”这条零代码路径。
+- rfe_type=0x22、cut=4、1T1R 是这块板子的实测值；TX 功率/149 信道空口质量还没测。
+
+## 原始文件（未入库，build/ 被忽略）
+
+    build\_evidence\old-radio-nopid.err.txt      A 的 stderr
+    build\_evidence\old-radio-c811.err.txt       run 1 完整 stderr（98 行）
+    build\_evidence\old-radio-c811-run2.err.txt  run 2 完整 stderr
+    build\_evidence\old-radio-c811-run3.*.txt    run 3（异步读取，部分）
